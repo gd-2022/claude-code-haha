@@ -18,10 +18,6 @@ concurrency:
   group: release-desktop-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
 jobs:
   build:
     strategy:
@@ -126,33 +122,11 @@ jobs:
           TAURI_ENV_TARGET_TRIPLE: ${{ matrix.rust_target }}
         run: bun run build:sidecars
 
-      # ── macOS code signing (optional) ────────────────────────
-      - name: Import macOS signing certificate
-        if: contains(matrix.platform, 'macos') && env.APPLE_CERTIFICATE != ''
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
-          security create-keychain -p actions build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p actions build.keychain
-          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
-          rm certificate.p12
-
       # ── Build Tauri app ──────────────────────────────────────
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS signing (leave empty to skip)
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
         with:
           projectPath: desktop
           tauriScript: bunx tauri
@@ -172,7 +146,7 @@ jobs:
 
             ### First-time installation
 
-            **macOS**: If you see "app is damaged" or "unidentified developer", run:
+            **macOS**: This build is unsigned. If you see "app is damaged" or "unidentified developer", run:
             ```bash
             xattr -cr /Applications/Claude\ Code\ Haha.app
             ```
@@ -183,9 +157,4 @@ jobs:
             See [Installation Guide](https://github.com/NanmiCoder/cc-haha/blob/main/docs/desktop/04-installation.md) for details.
           releaseDraft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || false }}
           prerelease: false
-          args: ${{ matrix.tauri_args }}
-
-      # ── Cleanup macOS keychain ───────────────────────────────
-      - name: Cleanup macOS keychain
-        if: contains(matrix.platform, 'macos') && always()
-        run: security delete-keychain build.keychain 2>/dev/null || true
+          args: ${{ matrix.tauri_args }} --config src-tauri/tauri.release-ci.json

@@ -5,6 +5,7 @@
 用户文档已经迁移到 `docs/`，并且以 Desktop Webapp 配置流程为准：
 
 - `docs/im/index.md`
+- `docs/im/wechat.md`
 - `docs/im/telegram.md`
 - `docs/im/feishu.md`
 
@@ -24,7 +25,7 @@ Desktop Webapp Settings
 注意两点：
 
 - IM 配置和配对都在 Desktop Webapp 的 `Settings -> IM 接入`
-- Webapp 不会自动启动 Adapter 进程，仍需手动运行 `bun run telegram` 或 `bun run feishu`
+- Webapp 不会自动启动 Adapter 进程，仍需手动运行 `bun run wechat`、`bun run telegram` 或 `bun run feishu`
 
 ## 快速启动
 
@@ -34,6 +35,8 @@ bun install
 bun run telegram
 # 或
 bun run feishu
+# 或
+bun run wechat
 ```
 
 ## 开发
@@ -46,6 +49,7 @@ bun test
 bun test common/
 bun test telegram/
 bun test feishu/
+bun test wechat/
 ```
 
 ### 目录结构
@@ -59,6 +63,9 @@ adapters/
 ├── feishu/
 │   ├── media.ts           # FeishuMediaService(@larksuiteoapi/node-sdk 封装)
 │   └── extract-payload.ts # 入站 im.message.receive_v1 事件解析
+├── wechat/
+│   ├── protocol.ts        # 微信 iLink QR 登录 / getupdates / sendmessage 协议封装
+│   └── index.ts           # 微信文本聊天 Adapter
 ├── package.json
 ├── tsconfig.json
 └── README.md

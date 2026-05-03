@@ -60,6 +60,7 @@ const zhSidebar = [
     collapsed: false,
     items: [
       { text: '总览', link: '/im/' },
+      { text: '微信', link: '/im/wechat' },
       { text: 'Telegram', link: '/im/telegram' },
       { text: '飞书', link: '/im/feishu' },
     ],

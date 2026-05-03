@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test'
+import * as fs from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
 import { AdapterHttpClient } from '../http-client.js'
 
 describe('AdapterHttpClient', () => {
@@ -51,6 +54,23 @@ describe('AdapterHttpClient', () => {
     const projects = await client.listRecentProjects()
     expect(projects).toHaveLength(1)
     expect(projects[0].projectName).toBe('my-app')
+  })
+
+  it('matchProject accepts an absolute local project path without recent history', async () => {
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'im-project-'))
+    try {
+      globalThis.fetch = mock(() => {
+        throw new Error('recent projects should not be queried for absolute paths')
+      }) as any
+
+      const result = await client.matchProject(projectDir)
+
+      expect(result.project?.realPath).toBe(fs.realpathSync(projectDir))
+      expect(result.project?.projectName).toBe(path.basename(projectDir))
+      expect((globalThis.fetch as any).mock.calls).toHaveLength(0)
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true })
+    }
   })
 
   it('createSession throws on server error', async () => {

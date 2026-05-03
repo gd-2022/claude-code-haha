@@ -1,3 +1,7 @@
+import * as fs from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
+
 export type RecentProject = {
   projectPath: string
   realPath: string
@@ -85,6 +89,22 @@ export class AdapterHttpClient {
    * Returns { project, ambiguous[] } — ambiguous is set when multiple projects match.
    */
   async matchProject(query: string): Promise<{ project?: RecentProject; ambiguous?: RecentProject[] }> {
+    const directPath = resolveExistingProjectPath(query)
+    if (directPath) {
+      return {
+        project: {
+          projectPath: directPath,
+          realPath: directPath,
+          projectName: path.basename(directPath) || directPath,
+          isGit: fs.existsSync(path.join(directPath, '.git')),
+          repoName: null,
+          branch: null,
+          modifiedAt: new Date().toISOString(),
+          sessionCount: 0,
+        },
+      }
+    }
+
     const projects = await this.listRecentProjects()
 
     // Try as 1-based index
@@ -142,5 +162,25 @@ export class AdapterHttpClient {
     } finally {
       clearTimeout(timer)
     }
+  }
+}
+
+function resolveExistingProjectPath(query: string): string | null {
+  const trimmed = query.trim()
+  if (!trimmed) return null
+
+  const expanded = trimmed === '~'
+    ? os.homedir()
+    : trimmed.startsWith('~/')
+      ? path.join(os.homedir(), trimmed.slice(2))
+      : trimmed
+
+  if (!path.isAbsolute(expanded)) return null
+
+  try {
+    const realPath = fs.realpathSync(expanded)
+    return fs.statSync(realPath).isDirectory() ? realPath : null
+  } catch {
+    return null
   }
 }

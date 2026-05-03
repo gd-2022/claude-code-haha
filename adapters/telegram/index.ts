@@ -11,7 +11,7 @@ import { WsBridge, type ServerMessage } from '../common/ws-bridge.js'
 import { MessageBuffer } from '../common/message-buffer.js'
 import { MessageDedup } from '../common/message-dedup.js'
 import { enqueue } from '../common/chat-queue.js'
-import { loadConfig } from '../common/config.js'
+import { getConfiguredWorkDir, loadConfig } from '../common/config.js'
 import {
   formatImHelp,
   formatImStatus,
@@ -44,6 +44,7 @@ const bridge = new WsBridge(config.serverUrl, 'tg')
 const dedup = new MessageDedup()
 const sessionStore = new SessionStore()
 const httpClient = new AdapterHttpClient(config.serverUrl)
+const defaultWorkDir = getConfiguredWorkDir(config, config.telegram)
 const attachmentStore = new AttachmentStore()
 const media = new TelegramMediaService(bot, attachmentStore)
 attachmentStore.gc().catch((err) => {
@@ -225,7 +226,7 @@ async function ensureSession(chatId: string): Promise<boolean> {
     return await bridge.waitForOpen(chatId)
   }
 
-  const workDir = config.defaultProjectDir
+  const workDir = defaultWorkDir
   if (workDir) {
     return await createSessionForChat(chatId, workDir)
   }
@@ -265,7 +266,7 @@ async function showProjectPicker(chatId: string): Promise<void> {
     const projects = await httpClient.listRecentProjects()
     if (projects.length === 0) {
       await bot.api.sendMessage(numericChatId,
-        '没有找到最近的项目。请先在 Desktop App 中打开一个项目，或在 Settings → IM 接入中配置默认项目。')
+        `没有找到最近的项目。发送 /new 会使用默认工作目录：${defaultWorkDir}\n也可以发送 /new /path/to/project 指定项目。`)
       return
     }
 
@@ -274,7 +275,7 @@ async function showProjectPicker(chatId: string): Promise<void> {
     )
     pendingProjectSelection.set(chatId, true)
     await bot.api.sendMessage(numericChatId,
-      `选择项目（回复编号）：\n\n${lines.join('\n\n')}\n\n💡 下次可直接 /new <编号或名称> 快速新建会话`)
+      `选择项目（回复编号）：\n\n${lines.join('\n\n')}\n\n💡 下次可直接 /new <编号、名称或绝对路径> 快速新建会话`)
   } catch (err) {
     await bot.api.sendMessage(numericChatId,
       `❌ 无法获取项目列表: ${err instanceof Error ? err.message : String(err)}`)
@@ -444,7 +445,7 @@ async function handleServerMessage(chatId: string, msg: ServerMessage): Promise<
       // This happens when the API key or provider changed since the session was created.
       if (msg.message && /Invalid.*signature.*thinking/i.test(msg.message)) {
         const stored = sessionStore.get(chatId)
-        const workDir = stored?.workDir || config.defaultProjectDir
+        const workDir = stored?.workDir || defaultWorkDir
         if (workDir) {
           await bot.api.sendMessage(numericChatId, '⚠️ 会话上下文已失效，正在自动重建...')
           clearTransientChatState(chatId)
@@ -486,7 +487,7 @@ bot.command('help', (ctx) => void sendHelp(ctx))
 
 /** Reset session state and start a new session for chatId.
  *  If `query` is provided, match a project by index or name;
- *  otherwise use defaultProjectDir or show the picker. */
+ *  otherwise use the configured/default work directory. */
 async function startNewSession(chatId: string, query?: string): Promise<void> {
   const numericChatId = Number(chatId)
 
@@ -522,7 +523,7 @@ async function startNewSession(chatId: string, query?: string): Promise<void> {
         `❌ ${err instanceof Error ? err.message : String(err)}`)
     }
   } else {
-    const workDir = config.defaultProjectDir
+    const workDir = defaultWorkDir
     if (workDir) {
       const ok = await createSessionForChat(chatId, workDir)
       if (ok) {

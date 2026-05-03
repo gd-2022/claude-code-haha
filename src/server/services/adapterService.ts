@@ -42,6 +42,15 @@ export type AdapterFileConfig = {
     defaultWorkDir?: string
     streamingCard?: boolean
   }
+  wechat?: {
+    accountId?: string
+    botToken?: string
+    baseUrl?: string
+    userId?: string
+    allowedUsers?: string[]
+    pairedUsers?: PairedUser[]
+    defaultWorkDir?: string
+  }
 }
 
 function getConfigPath(): string {
@@ -84,6 +93,9 @@ class AdapterService {
       if (config.feishu.encryptKey) config.feishu.encryptKey = maskSecret(config.feishu.encryptKey)
       if (config.feishu.verificationToken) config.feishu.verificationToken = maskSecret(config.feishu.verificationToken)
     }
+    if (config.wechat?.botToken) {
+      config.wechat.botToken = maskSecret(config.wechat.botToken)
+    }
     if (config.pairing?.code) {
       config.pairing.code = '******'
     }
@@ -103,6 +115,9 @@ class AdapterService {
       if (isMasked(patch.feishu.encryptKey)) patch.feishu.encryptKey = current.feishu?.encryptKey
       if (isMasked(patch.feishu.verificationToken)) patch.feishu.verificationToken = current.feishu?.verificationToken
     }
+    if (patch.wechat && isMasked(patch.wechat.botToken)) {
+      patch.wechat.botToken = current.wechat?.botToken
+    }
     if (patch.pairing && isMasked(patch.pairing.code ?? undefined)) {
       patch.pairing.code = current.pairing?.code
     }
@@ -112,6 +127,7 @@ class AdapterService {
       ...patch,
       telegram: patch.telegram ? { ...current.telegram, ...patch.telegram } : current.telegram,
       feishu: patch.feishu ? { ...current.feishu, ...patch.feishu } : current.feishu,
+      wechat: patch.wechat ? { ...current.wechat, ...patch.wechat } : current.wechat,
       pairing: patch.pairing !== undefined ? { ...current.pairing, ...patch.pairing } : current.pairing,
     }
 

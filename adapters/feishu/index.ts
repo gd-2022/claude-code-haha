@@ -14,7 +14,7 @@ import { WsBridge, type ServerMessage, type AttachmentRef } from '../common/ws-b
 import { MessageDedup } from '../common/message-dedup.js'
 import { StreamingCard } from './streaming-card.js'
 import { enqueue } from '../common/chat-queue.js'
-import { loadConfig } from '../common/config.js'
+import { getConfiguredWorkDir, loadConfig } from '../common/config.js'
 import {
   formatImHelp,
   formatImStatus,
@@ -50,6 +50,7 @@ const bridge = new WsBridge(config.serverUrl, 'feishu')
 const dedup = new MessageDedup()
 const sessionStore = new SessionStore()
 const httpClient = new AdapterHttpClient(config.serverUrl)
+const defaultWorkDir = getConfiguredWorkDir(config, config.feishu)
 
 // Attachment plumbing — shared by inbound (download) and outbound (upload) paths.
 const attachmentStore = new AttachmentStore()
@@ -654,7 +655,7 @@ async function ensureSession(chatId: string): Promise<boolean> {
     return await bridge.waitForOpen(chatId)
   }
 
-  const workDir = config.defaultProjectDir
+  const workDir = defaultWorkDir
   if (workDir) {
     return await createSessionForChat(chatId, workDir)
   }
@@ -698,7 +699,7 @@ async function showProjectPicker(chatId: string): Promise<void> {
     const projects = await httpClient.listRecentProjects()
     if (projects.length === 0) {
       await sendText(chatId,
-        '没有找到最近的项目。请先在 Desktop App 中打开一个项目，或在设置中配置默认项目。')
+        `没有找到最近的项目。发送 /new 会使用默认工作目录：${defaultWorkDir}\n也可以发送 /new /path/to/project 指定项目。`)
       return
     }
     pendingProjectSelection.set(chatId, true)
@@ -708,7 +709,7 @@ async function showProjectPicker(chatId: string): Promise<void> {
       const lines = projects.slice(0, 10).map((p, i) =>
         `${i + 1}. **${p.projectName}**${p.branch ? ` (${p.branch})` : ''}\n   ${p.realPath}`
       )
-      await sendText(chatId, `选择项目（回复编号）：\n\n${lines.join('\n\n')}\n\n💡 下次可直接 /new <编号或名称> 快速新建会话`)
+      await sendText(chatId, `选择项目（回复编号）：\n\n${lines.join('\n\n')}\n\n💡 下次可直接 /new <编号、名称或绝对路径> 快速新建会话`)
     }
   } catch (err) {
     await sendText(chatId, `❌ 无法获取项目列表: ${err instanceof Error ? err.message : String(err)}`)
@@ -750,7 +751,7 @@ async function startNewSession(chatId: string, query?: string): Promise<void> {
       await sendText(chatId, `❌ ${err instanceof Error ? err.message : String(err)}`)
     }
   } else {
-    const workDir = config.defaultProjectDir
+    const workDir = defaultWorkDir
     if (workDir) {
       const ok = await createSessionForChat(chatId, workDir)
       if (ok) {
@@ -883,7 +884,7 @@ async function handleServerMessage(chatId: string, msg: ServerMessage): Promise<
           void card.abort(new Error('session reset')).catch(() => {})
         }
         const stored = sessionStore.get(chatId)
-        const workDir = stored?.workDir || config.defaultProjectDir
+        const workDir = stored?.workDir || defaultWorkDir
         if (workDir) {
           await sendText(chatId, '⚠️ 会话上下文已失效，正在自动重建...')
           bridge.resetSession(chatId)

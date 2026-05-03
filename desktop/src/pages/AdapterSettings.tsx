@@ -5,12 +5,22 @@ import { Input } from '../components/shared/Input'
 import { Button } from '../components/shared/Button'
 import { DirectoryPicker } from '../components/shared/DirectoryPicker'
 import { ConfirmDialog } from '../components/shared/ConfirmDialog'
+import QRCode from 'qrcode'
 
-type ImTab = 'feishu' | 'telegram'
+type ImTab = 'feishu' | 'wechat' | 'telegram'
 
 export function AdapterSettings() {
   const t = useTranslation()
-  const { config, isLoading, fetchConfig, updateConfig, generatePairingCode, removePairedUser } = useAdapterStore()
+  const {
+    config,
+    isLoading,
+    fetchConfig,
+    updateConfig,
+    generatePairingCode,
+    startWechatLogin,
+    pollWechatLogin,
+    removePairedUser,
+  } = useAdapterStore()
 
   // Active IM tab —— Feishu 默认展示，在前
   const [activeIm, setActiveIm] = useState<ImTab>('feishu')
@@ -31,6 +41,13 @@ export function AdapterSettings() {
   const [fsAllowedUsers, setFsAllowedUsers] = useState('')
   const [fsStreamingCard, setFsStreamingCard] = useState(false)
 
+  // WeChat
+  const [wcAllowedUsers, setWcAllowedUsers] = useState('')
+  const [wechatQrUrl, setWechatQrUrl] = useState<string | null>(null)
+  const [wechatSessionKey, setWechatSessionKey] = useState<string | null>(null)
+  const [wechatStatus, setWechatStatus] = useState('')
+  const [isWechatBinding, setIsWechatBinding] = useState(false)
+
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle')
   const [saveError, setSaveError] = useState('')
@@ -38,7 +55,7 @@ export function AdapterSettings() {
   // Pairing
   const [pairingCode, setPairingCode] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
-  const [pendingUnbind, setPendingUnbind] = useState<{ platform: 'telegram' | 'feishu'; userId: string | number } | null>(null)
+  const [pendingUnbind, setPendingUnbind] = useState<{ platform: 'telegram' | 'feishu' | 'wechat'; userId: string | number } | null>(null)
   const [isUnbinding, setIsUnbinding] = useState(false)
 
   useEffect(() => {
@@ -56,7 +73,45 @@ export function AdapterSettings() {
     setFsVerificationToken(config.feishu?.verificationToken ?? '')
     setFsAllowedUsers(config.feishu?.allowedUsers?.join(', ') ?? '')
     setFsStreamingCard(config.feishu?.streamingCard ?? false)
+    setWcAllowedUsers(config.wechat?.allowedUsers?.join(', ') ?? '')
   }, [config])
+
+  useEffect(() => {
+    if (!wechatSessionKey) return
+
+    let cancelled = false
+    let timer: number | null = null
+
+    const poll = async () => {
+      try {
+        const result = await pollWechatLogin(wechatSessionKey)
+        if (cancelled) return
+        if (result.connected) {
+          setWechatStatus(t('settings.adapters.wechatBindSuccess'))
+          setWechatQrUrl(null)
+          setWechatSessionKey(null)
+          setIsWechatBinding(false)
+          return
+        }
+        if (result.message) {
+          setWechatStatus(result.message)
+        }
+      } catch (err) {
+        if (!cancelled) setWechatStatus(err instanceof Error ? err.message : 'WeChat bind failed')
+      }
+
+      if (!cancelled) {
+        timer = window.setTimeout(() => void poll(), 1200)
+      }
+    }
+
+    timer = window.setTimeout(() => void poll(), 1200)
+
+    return () => {
+      cancelled = true
+      if (timer != null) window.clearTimeout(timer)
+    }
+  }, [wechatSessionKey, pollWechatLogin, t])
 
   async function handleSave() {
     setIsSaving(true)
@@ -93,6 +148,16 @@ export function AdapterSettings() {
         streamingCard: fsStreamingCard,
       }
 
+      const wcUsers = wcAllowedUsers
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+
+      patch.wechat = {
+        ...config.wechat,
+        allowedUsers: wcUsers.length ? wcUsers : [],
+      }
+
       await updateConfig(patch)
       setSaveStatus('saved')
       setTimeout(() => setSaveStatus('idle'), 2000)
@@ -116,7 +181,29 @@ export function AdapterSettings() {
     }
   }, [generatePairingCode])
 
-  const handleUnbind = useCallback(async (platform: 'telegram' | 'feishu', userId: string | number) => {
+  const handleWechatBind = useCallback(async () => {
+    setIsWechatBinding(true)
+    setWechatStatus('')
+    try {
+      const result = await startWechatLogin()
+      if (!result.qrcodeUrl) {
+        throw new Error(result.message || 'WeChat QR URL missing')
+      }
+      const qrDataUrl = await QRCode.toDataURL(result.qrcodeUrl, {
+        errorCorrectionLevel: 'M',
+        margin: 1,
+        scale: 8,
+      })
+      setWechatQrUrl(qrDataUrl)
+      setWechatSessionKey(result.sessionKey)
+      setWechatStatus(result.message)
+    } catch (err) {
+      setWechatStatus(err instanceof Error ? err.message : 'WeChat bind failed')
+      setIsWechatBinding(false)
+    }
+  }, [startWechatLogin])
+
+  const handleUnbind = useCallback(async (platform: 'telegram' | 'feishu' | 'wechat', userId: string | number) => {
     setPendingUnbind({ platform, userId })
   }, [])
 
@@ -136,6 +223,7 @@ export function AdapterSettings() {
   const allPairedUsers = [
     ...(config.telegram?.pairedUsers ?? []).map((u) => ({ ...u, platform: 'telegram' as const })),
     ...(config.feishu?.pairedUsers ?? []).map((u) => ({ ...u, platform: 'feishu' as const })),
+    ...(config.wechat?.pairedUsers ?? []).map((u) => ({ ...u, platform: 'wechat' as const })),
   ]
 
   // Check pairing expiry
@@ -254,6 +342,11 @@ export function AdapterSettings() {
             onClick={() => setActiveIm('feishu')}
           />
           <ImTabButton
+            label={t('settings.adapters.wechat')}
+            active={activeIm === 'wechat'}
+            onClick={() => setActiveIm('wechat')}
+          />
+          <ImTabButton
             label={t('settings.adapters.telegram')}
             active={activeIm === 'telegram'}
             onClick={() => setActiveIm('telegram')}
@@ -314,6 +407,53 @@ export function AdapterSettings() {
                 <p className="text-xs text-[var(--color-text-tertiary)]">{t('settings.adapters.streamingCardDesc')}</p>
               </div>
             </label>
+          </div>
+        )}
+
+        {activeIm === 'wechat' && (
+          <div className="p-4 space-y-4">
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 space-y-3">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-sm font-medium text-[var(--color-text-primary)]">
+                    {config.wechat?.accountId ? t('settings.adapters.wechatConnected') : t('settings.adapters.wechatNotConnected')}
+                  </div>
+                  <p className="text-xs text-[var(--color-text-tertiary)]">
+                    {t('settings.adapters.wechatQrHint')}
+                  </p>
+                </div>
+                <Button onClick={handleWechatBind} loading={isWechatBinding && !wechatQrUrl}>
+                  {config.wechat?.accountId ? t('settings.adapters.wechatRebind') : t('settings.adapters.wechatBind')}
+                </Button>
+              </div>
+
+              {wechatQrUrl && (
+                <div className="flex items-start gap-4">
+                  <img
+                    src={wechatQrUrl}
+                    alt={t('settings.adapters.wechatQrAlt')}
+                    className="h-40 w-40 rounded-lg border border-[var(--color-border)] bg-white object-contain p-2"
+                  />
+                  <div className="pt-2 text-sm text-[var(--color-text-secondary)]">
+                    {wechatStatus || t('settings.adapters.wechatWaiting')}
+                  </div>
+                </div>
+              )}
+
+              {!wechatQrUrl && wechatStatus && (
+                <p className="text-sm text-[var(--color-text-secondary)]">{wechatStatus}</p>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <Input
+                label={t('settings.adapters.allowedUsers')}
+                value={wcAllowedUsers}
+                onChange={(e) => setWcAllowedUsers(e.target.value)}
+                placeholder={t('settings.adapters.wcAllowedUsersPlaceholder')}
+              />
+              <p className="text-xs text-[var(--color-text-tertiary)]">{t('settings.adapters.wechatAllowedUsersHint')}</p>
+            </div>
           </div>
         )}
 

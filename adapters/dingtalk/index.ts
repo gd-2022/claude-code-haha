@@ -44,6 +44,7 @@ import {
   DINGTALK_PERMISSION_CARD_CALLBACK_ROUTE,
   parseDingTalkPermissionCardAction,
 } from './permission-card.js'
+import { finishAndResetDingTalkStreamingState, resetDingTalkStreamingState } from './stream-state.js'
 
 const DINGTALK_API = 'https://api.dingtalk.com'
 
@@ -204,10 +205,7 @@ async function flushToAiCard(chatId: string, newText: string, isComplete: boolea
 }
 
 function clearTransientChatState(chatId: string): void {
-  aiCardBuffers.get(chatId)?.reset()
-  aiCardBuffers.delete(chatId)
-  streamingCards.delete(chatId)
-  streamingCardText.delete(chatId)
+  resetDingTalkStreamingState({ aiCardBuffers, streamingCards, streamingCardText }, chatId)
   clearPendingPermissions(chatId)
   const runtime = getRuntimeState(chatId)
   runtime.state = 'idle'
@@ -388,7 +386,6 @@ async function handleServerMessage(chatId: string, msg: ServerMessage): Promise<
     case 'content_start':
       if (msg.blockType === 'text') {
         runtime.state = 'streaming'
-        void getOrCreateAiCard(chatId)
       }
       if (msg.blockType === 'tool_use') runtime.state = 'tool_executing'
       break
@@ -428,6 +425,7 @@ async function sendPermissionRequest(chatId: string, msg: ServerMessage): Promis
   const runtime = getRuntimeState(chatId)
   runtime.pendingPermissionCount += 1
   runtime.state = 'permission_pending'
+  await finishAndResetDingTalkStreamingState({ aiCardBuffers, streamingCards, streamingCardText }, chatId)
 
   const set = pendingPermissions.get(chatId) ?? new Set<string>()
   set.add(msg.requestId)

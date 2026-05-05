@@ -642,6 +642,8 @@ export const zh: Record<TranslationKey, string> = {
   'settings.general.notificationsStatusUnsupported': '当前环境不可用',
   'settings.general.notificationsAuthorize': '授权通知',
   'settings.general.notificationsOpenSettings': '打开系统设置',
+  'settings.general.notificationsTestTitle': 'Claude Code Haha 通知已启用',
+  'settings.general.notificationsTestBody': '后续授权确认会通过 macOS 系统通知提醒。',
   'settings.general.webFetchPreflightTitle': 'WebFetch 预检',
   'settings.general.webFetchPreflightDescription': '桌面端默认跳过 Claude 的域名预检，避免第三方服务商或受限网络下出现误报失败。',
   'settings.general.webFetchPreflightEnabled': '跳过 WebFetch 域名预检',

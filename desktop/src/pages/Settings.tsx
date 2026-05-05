@@ -33,6 +33,7 @@ import { formatBytes } from '../lib/formatBytes'
 import { isTauriRuntime } from '../lib/desktopRuntime'
 import {
   getDesktopNotificationPermission,
+  notifyDesktop,
   openDesktopNotificationSettings,
   requestDesktopNotificationPermission,
   type DesktopNotificationPermission,
@@ -1415,6 +1416,12 @@ function GeneralSettings() {
     try {
       const permission = await requestDesktopNotificationPermission()
       setNotificationPermission(permission)
+      if (permission === 'granted') {
+        void notifyDesktop({
+          title: t('settings.general.notificationsTestTitle'),
+          body: t('settings.general.notificationsTestBody'),
+        })
+      }
       if (permission === 'denied') {
         await openDesktopNotificationSettings()
       }
@@ -1431,6 +1438,12 @@ function GeneralSettings() {
       } else {
         const permission = await requestDesktopNotificationPermission()
         setNotificationPermission(permission)
+        if (permission === 'granted') {
+          void notifyDesktop({
+            title: t('settings.general.notificationsTestTitle'),
+            body: t('settings.general.notificationsTestBody'),
+          })
+        }
         if (permission === 'denied') {
           await openDesktopNotificationSettings()
         }

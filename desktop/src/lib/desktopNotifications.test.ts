@@ -5,6 +5,9 @@ const notificationPluginMock = vi.hoisted(() => ({
   requestPermission: vi.fn(),
   sendNotification: vi.fn(),
 }))
+const coreApiMock = vi.hoisted(() => ({
+  invoke: vi.fn(),
+}))
 const requestUserAttentionMock = vi.hoisted(() => vi.fn())
 const windowApiMock = vi.hoisted(() => ({
   requestUserAttention: requestUserAttentionMock,
@@ -18,6 +21,7 @@ const windowApiMock = vi.hoisted(() => ({
 }))
 
 vi.mock('@tauri-apps/plugin-notification', () => notificationPluginMock)
+vi.mock('@tauri-apps/api/core', () => coreApiMock)
 vi.mock('@tauri-apps/api/window', () => windowApiMock)
 
 import {
@@ -33,17 +37,21 @@ describe('desktopNotifications', () => {
   beforeEach(() => {
     vi.useRealTimers()
     resetDesktopNotificationsForTests()
+    coreApiMock.invoke.mockReset()
     notificationPluginMock.isPermissionGranted.mockReset()
     notificationPluginMock.requestPermission.mockReset()
     notificationPluginMock.sendNotification.mockReset()
     windowApiMock.getCurrentWindow.mockClear()
     windowApiMock.requestUserAttention.mockReset()
     useSettingsStore.setState({ desktopNotificationsEnabled: true })
+    Object.defineProperty(navigator, 'platform', {
+      configurable: true,
+      value: 'Linux x86_64',
+    })
   })
 
-  it('requests native notification permission before sending through the Tauri plugin', async () => {
-    notificationPluginMock.isPermissionGranted.mockResolvedValue(false)
-    notificationPluginMock.requestPermission.mockResolvedValue('granted')
+  it('sends through the Tauri plugin when native notification permission is already granted', async () => {
+    notificationPluginMock.isPermissionGranted.mockResolvedValue(true)
 
     notifyDesktop({
       dedupeKey: 'permission:1',
@@ -53,17 +61,16 @@ describe('desktopNotifications', () => {
 
     await vi.waitFor(() => expect(notificationPluginMock.sendNotification).toHaveBeenCalledTimes(1))
     expect(notificationPluginMock.isPermissionGranted).toHaveBeenCalledTimes(1)
-    expect(notificationPluginMock.requestPermission).toHaveBeenCalledTimes(1)
+    expect(notificationPluginMock.requestPermission).not.toHaveBeenCalled()
     expect(notificationPluginMock.sendNotification).toHaveBeenCalledWith({
       title: 'Permission required',
       body: 'Approve command execution',
     })
   })
 
-  it('does not fall back to sound when native notification permission is denied', async () => {
+  it('does not request notification permission from a blocking permission prompt', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     notificationPluginMock.isPermissionGranted.mockResolvedValue(false)
-    notificationPluginMock.requestPermission.mockResolvedValue('denied')
 
     notifyDesktop({ title: 'Permission required' })
 
@@ -72,6 +79,64 @@ describe('desktopNotifications', () => {
     expect(warnSpy).toHaveBeenCalledWith(
       '[desktopNotifications] native notification permission was not granted',
     )
+    expect(notificationPluginMock.requestPermission).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+
+  it('uses the macOS native bridge for foreground-visible notifications', async () => {
+    Object.defineProperty(navigator, 'platform', {
+      configurable: true,
+      value: 'MacIntel',
+    })
+    coreApiMock.invoke.mockResolvedValueOnce(true)
+
+    await expect(notifyDesktop({
+      title: 'Permission required',
+      body: 'Approve command execution',
+    })).resolves.toBe(true)
+
+    expect(coreApiMock.invoke).toHaveBeenCalledWith('macos_send_notification', {
+      title: 'Permission required',
+      body: 'Approve command execution',
+    })
+    expect(notificationPluginMock.sendNotification).not.toHaveBeenCalled()
+    expect(notificationPluginMock.requestPermission).not.toHaveBeenCalled()
+  })
+
+  it('does not request macOS permission from a blocking permission prompt', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    Object.defineProperty(navigator, 'platform', {
+      configurable: true,
+      value: 'MacIntel',
+    })
+    coreApiMock.invoke.mockResolvedValueOnce(false)
+
+    await expect(notifyDesktop({ title: 'Permission required' })).resolves.toBe(false)
+
+    expect(coreApiMock.invoke).toHaveBeenCalledWith('macos_send_notification', {
+      title: 'Permission required',
+      body: undefined,
+    })
+    expect(coreApiMock.invoke).not.toHaveBeenCalledWith('macos_request_notification_permission')
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[desktopNotifications] native notification permission was not granted',
+    )
+    warnSpy.mockRestore()
+  })
+
+  it('does not fall back to the Tauri plugin when the macOS bridge fails', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    Object.defineProperty(navigator, 'platform', {
+      configurable: true,
+      value: 'MacIntel',
+    })
+    coreApiMock.invoke.mockRejectedValueOnce(new Error('bridge unavailable'))
+    notificationPluginMock.isPermissionGranted.mockResolvedValue(true)
+
+    await expect(notifyDesktop({ title: 'Permission required' })).resolves.toBe(false)
+
+    expect(notificationPluginMock.sendNotification).not.toHaveBeenCalled()
+    expect(notificationPluginMock.isPermissionGranted).not.toHaveBeenCalled()
     warnSpy.mockRestore()
   })
 
@@ -114,6 +179,38 @@ describe('desktopNotifications', () => {
     await expect(getDesktopNotificationPermission()).resolves.toBe('default')
     await expect(requestDesktopNotificationPermission()).resolves.toBe('granted')
     expect(notificationPluginMock.requestPermission).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports and requests macOS notification permission through the native bridge', async () => {
+    Object.defineProperty(navigator, 'platform', {
+      configurable: true,
+      value: 'MacIntel',
+    })
+    coreApiMock.invoke
+      .mockResolvedValueOnce('default')
+      .mockResolvedValueOnce('granted')
+
+    await expect(getDesktopNotificationPermission()).resolves.toBe('default')
+    await expect(requestDesktopNotificationPermission()).resolves.toBe('granted')
+
+    expect(coreApiMock.invoke).toHaveBeenNthCalledWith(1, 'macos_notification_permission_state')
+    expect(coreApiMock.invoke).toHaveBeenNthCalledWith(2, 'macos_request_notification_permission')
+    expect(notificationPluginMock.requestPermission).not.toHaveBeenCalled()
+  })
+
+  it('does not use the Tauri plugin permission fallback on macOS bridge errors', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    Object.defineProperty(navigator, 'platform', {
+      configurable: true,
+      value: 'MacIntel',
+    })
+    coreApiMock.invoke.mockRejectedValueOnce(new Error('bridge unavailable'))
+    notificationPluginMock.isPermissionGranted.mockResolvedValue(true)
+
+    await expect(getDesktopNotificationPermission()).resolves.toBe('unsupported')
+
+    expect(notificationPluginMock.isPermissionGranted).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
   })
 
   it('sends a native notification once for a dedupe key', async () => {

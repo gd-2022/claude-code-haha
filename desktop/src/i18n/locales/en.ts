@@ -640,6 +640,8 @@ export const en = {
   'settings.general.notificationsStatusUnsupported': 'Unavailable in this environment',
   'settings.general.notificationsAuthorize': 'Authorize',
   'settings.general.notificationsOpenSettings': 'Open Settings',
+  'settings.general.notificationsTestTitle': 'Claude Code Haha notifications are enabled',
+  'settings.general.notificationsTestBody': 'Permission prompts will now use macOS notifications.',
   'settings.general.webFetchPreflightTitle': 'WebFetch Preflight',
   'settings.general.webFetchPreflightDescription': 'Desktop sessions skip Claude\'s domain preflight by default to avoid false failures on third-party providers and restricted networks.',
   'settings.general.webFetchPreflightEnabled': 'Skip WebFetch domain preflight',

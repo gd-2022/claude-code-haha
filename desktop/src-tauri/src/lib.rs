@@ -25,6 +25,130 @@ use tauri_plugin_shell::{
     ShellExt,
 };
 
+#[cfg(target_os = "macos")]
+mod macos_notifications {
+    use std::ffi::{CStr, CString};
+    use std::os::raw::{c_char, c_int};
+
+    const ERROR_BUFFER_LEN: usize = 1024;
+
+    unsafe extern "C" {
+        fn cchh_notification_authorization_status(
+            error_buffer: *mut c_char,
+            error_buffer_len: usize,
+        ) -> c_int;
+        fn cchh_request_notification_authorization(
+            error_buffer: *mut c_char,
+            error_buffer_len: usize,
+        ) -> bool;
+        fn cchh_send_user_notification(
+            title: *const c_char,
+            body: *const c_char,
+            error_buffer: *mut c_char,
+            error_buffer_len: usize,
+        ) -> bool;
+    }
+
+    fn new_error_buffer() -> [c_char; ERROR_BUFFER_LEN] {
+        [0; ERROR_BUFFER_LEN]
+    }
+
+    fn read_error(buffer: &[c_char; ERROR_BUFFER_LEN]) -> Option<String> {
+        let message = unsafe { CStr::from_ptr(buffer.as_ptr()) }
+            .to_string_lossy()
+            .trim()
+            .to_string();
+        if message.is_empty() {
+            None
+        } else {
+            Some(message)
+        }
+    }
+
+    fn permission_from_status(status: c_int) -> &'static str {
+        match status {
+            1 => "denied",
+            2 | 3 | 4 => "granted",
+            _ => "default",
+        }
+    }
+
+    pub fn permission_state() -> Result<String, String> {
+        let mut error_buffer = new_error_buffer();
+        let status = unsafe {
+            cchh_notification_authorization_status(error_buffer.as_mut_ptr(), ERROR_BUFFER_LEN)
+        };
+
+        if status < 0 {
+            return Err(read_error(&error_buffer)
+                .unwrap_or_else(|| "failed to read macOS notification permission".to_string()));
+        }
+
+        Ok(permission_from_status(status).to_string())
+    }
+
+    pub fn request_permission() -> Result<String, String> {
+        let mut error_buffer = new_error_buffer();
+        let granted = unsafe {
+            cchh_request_notification_authorization(error_buffer.as_mut_ptr(), ERROR_BUFFER_LEN)
+        };
+
+        if granted {
+            return Ok("granted".to_string());
+        }
+
+        if let Some(error) = read_error(&error_buffer) {
+            return Err(error);
+        }
+
+        permission_state()
+    }
+
+    pub fn send_notification(title: String, body: Option<String>) -> Result<bool, String> {
+        let title = CString::new(title)
+            .map_err(|_| "notification title contains an unsupported NUL byte".to_string())?;
+        let body = body
+            .map(CString::new)
+            .transpose()
+            .map_err(|_| "notification body contains an unsupported NUL byte".to_string())?;
+
+        let mut error_buffer = new_error_buffer();
+        let sent = unsafe {
+            cchh_send_user_notification(
+                title.as_ptr(),
+                body.as_ref()
+                    .map_or(std::ptr::null(), |value| value.as_ptr()),
+                error_buffer.as_mut_ptr(),
+                ERROR_BUFFER_LEN,
+            )
+        };
+
+        if sent {
+            return Ok(true);
+        }
+
+        match read_error(&error_buffer).as_deref() {
+            Some("not_authorized") | None => Ok(false),
+            Some(error) => Err(error.to_string()),
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+mod macos_notifications {
+    pub fn permission_state() -> Result<String, String> {
+        Ok("unsupported".to_string())
+    }
+
+    pub fn request_permission() -> Result<String, String> {
+        Ok("unsupported".to_string())
+    }
+
+    pub fn send_notification(_title: String, _body: Option<String>) -> Result<bool, String> {
+        Ok(false)
+    }
+}
+
 const SERVER_STARTUP_LOG_LIMIT: usize = 80;
 const MAIN_WINDOW_LABEL: &str = "main";
 const TRAY_SHOW_ID: &str = "tray_show";
@@ -602,6 +726,21 @@ fn terminal_kill(state: State<'_, TerminalState>, session_id: u32) -> Result<(),
             .map_err(|err| format!("kill terminal shell: {err}"))?;
     }
     Ok(())
+}
+
+#[tauri::command]
+fn macos_notification_permission_state() -> Result<String, String> {
+    macos_notifications::permission_state()
+}
+
+#[tauri::command]
+fn macos_request_notification_permission() -> Result<String, String> {
+    macos_notifications::request_permission()
+}
+
+#[tauri::command]
+fn macos_send_notification(title: String, body: Option<String>) -> Result<bool, String> {
+    macos_notifications::send_notification(title, body)
 }
 
 fn decode_terminal_output(pending: &mut Vec<u8>, chunk: &[u8]) -> String {
@@ -1234,7 +1373,10 @@ pub fn run() {
             terminal_spawn,
             terminal_write,
             terminal_resize,
-            terminal_kill
+            terminal_kill,
+            macos_notification_permission_state,
+            macos_request_notification_permission,
+            macos_send_notification
         ]);
 
     // macOS: native menu bar (traffic-light overlay style)

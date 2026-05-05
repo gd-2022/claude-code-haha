@@ -14,6 +14,7 @@ const MOCK_GET_SETTINGS = vi.fn()
 const MOCK_UPDATE_SETTINGS = vi.fn()
 const desktopNotificationsMock = vi.hoisted(() => ({
   getDesktopNotificationPermission: vi.fn(),
+  notifyDesktop: vi.fn(),
   requestDesktopNotificationPermission: vi.fn(),
   openDesktopNotificationSettings: vi.fn(),
 }))
@@ -95,9 +96,11 @@ describe('Settings > General tab', () => {
   beforeEach(() => {
     MOCK_DELETE_PROVIDER.mockReset()
     desktopNotificationsMock.getDesktopNotificationPermission.mockReset()
+    desktopNotificationsMock.notifyDesktop.mockReset()
     desktopNotificationsMock.requestDesktopNotificationPermission.mockReset()
     desktopNotificationsMock.openDesktopNotificationSettings.mockReset()
     desktopNotificationsMock.getDesktopNotificationPermission.mockResolvedValue('default')
+    desktopNotificationsMock.notifyDesktop.mockResolvedValue(true)
     desktopNotificationsMock.requestDesktopNotificationPermission.mockResolvedValue('granted')
     desktopNotificationsMock.openDesktopNotificationSettings.mockResolvedValue(true)
     MOCK_GET_SETTINGS.mockResolvedValue({})
@@ -212,6 +215,10 @@ describe('Settings > General tab', () => {
     expect(useSettingsStore.getState().setDesktopNotificationsEnabled).toHaveBeenCalledWith(true)
     await vi.waitFor(() => {
       expect(desktopNotificationsMock.requestDesktopNotificationPermission).toHaveBeenCalledTimes(1)
+    })
+    expect(desktopNotificationsMock.notifyDesktop).toHaveBeenCalledWith({
+      title: 'Claude Code Haha notifications are enabled',
+      body: 'Permission prompts will now use macOS notifications.',
     })
   })
 

@@ -48,7 +48,55 @@ function getNotificationSettingsUrl(): string | null {
   }
 }
 
+async function invokeMacNotificationPermissionState(): Promise<DesktopNotificationPermission | null> {
+  if (detectPlatform() !== 'darwin') return null
+
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const permission = await invoke<DesktopNotificationPermission>('macos_notification_permission_state')
+    return ['default', 'denied', 'granted', 'unsupported'].includes(permission) ? permission : 'unsupported'
+  } catch (err) {
+    if (typeof console !== 'undefined') {
+      console.warn('[desktopNotifications] failed to read macOS notification permission:', err)
+    }
+    return 'unsupported'
+  }
+}
+
+async function invokeMacNotificationPermissionRequest(): Promise<DesktopNotificationPermission | null> {
+  if (detectPlatform() !== 'darwin') return null
+
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const permission = await invoke<DesktopNotificationPermission>('macos_request_notification_permission')
+    return ['default', 'denied', 'granted', 'unsupported'].includes(permission) ? permission : 'unsupported'
+  } catch (err) {
+    if (typeof console !== 'undefined') {
+      console.warn('[desktopNotifications] failed to request macOS notification permission:', err)
+    }
+    return 'unsupported'
+  }
+}
+
+async function sendMacNotification(options: { title: string; body?: string }): Promise<boolean | null> {
+  if (detectPlatform() !== 'darwin') return null
+
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const sent = await invoke<boolean>('macos_send_notification', options)
+    return typeof sent === 'boolean' ? sent : false
+  } catch (err) {
+    if (typeof console !== 'undefined') {
+      console.warn('[desktopNotifications] failed to send macOS native notification:', err)
+    }
+    return false
+  }
+}
+
 export async function getDesktopNotificationPermission(): Promise<DesktopNotificationPermission> {
+  const macPermission = await invokeMacNotificationPermissionState()
+  if (macPermission) return macPermission
+
   try {
     const { isPermissionGranted } = await import('@tauri-apps/plugin-notification')
     if (await isPermissionGranted()) return 'granted'
@@ -59,6 +107,9 @@ export async function getDesktopNotificationPermission(): Promise<DesktopNotific
 }
 
 export async function requestDesktopNotificationPermission(): Promise<DesktopNotificationPermission> {
+  const macPermission = await invokeMacNotificationPermissionRequest()
+  if (macPermission) return macPermission
+
   try {
     const {
       isPermissionGranted,
@@ -91,19 +142,15 @@ export async function openDesktopNotificationSettings(): Promise<boolean> {
 }
 
 async function sendNativeNotification(options: { title: string; body?: string }): Promise<boolean> {
+  const macSent = await sendMacNotification(options)
+  if (macSent !== null) return macSent
+
   const {
     isPermissionGranted,
-    requestPermission,
     sendNotification,
   } = await import('@tauri-apps/plugin-notification')
 
-  let permissionGranted = await isPermissionGranted()
-  if (!permissionGranted) {
-    const permission = await requestPermission()
-    permissionGranted = permission === 'granted'
-  }
-
-  if (!permissionGranted) {
+  if (!(await isPermissionGranted())) {
     return false
   }
 

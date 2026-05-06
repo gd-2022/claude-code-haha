@@ -44,6 +44,8 @@ const MANAGED_ENV_KEYS = [
   MODEL_CONTEXT_WINDOWS_ENV_KEY,
 ] as const
 
+const CUSTOM_PROVIDER_MODEL_CAPABILITIES = 'thinking,effort,adaptive_thinking,max_effort'
+
 const DEFAULT_INDEX: ProvidersIndex = { activeId: null, providers: [] }
 const AUTH_ENV_KEYS = new Set(['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'])
 
@@ -317,9 +319,18 @@ export class ProviderService {
     }
 
     const presetDefaultEnv = getPresetDefaultEnv(provider.presetId)
+    const customProviderCapabilityEnv =
+      provider.presetId === 'custom'
+        ? {
+            ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES: CUSTOM_PROVIDER_MODEL_CAPABILITIES,
+            ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES: CUSTOM_PROVIDER_MODEL_CAPABILITIES,
+            ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES: CUSTOM_PROVIDER_MODEL_CAPABILITIES,
+          }
+        : {}
 
     return {
       ...omitAuthEnv(presetDefaultEnv),
+      ...customProviderCapabilityEnv,
       ...(provider.autoCompactWindow !== undefined && {
         CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(provider.autoCompactWindow),
       }),

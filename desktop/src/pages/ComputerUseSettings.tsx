@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { computerUseApi, type ComputerUseStatus, type SetupResult, type InstalledApp, type AuthorizedApp } from '../api/computerUse'
 import { useTranslation } from '../i18n'
 
@@ -61,6 +61,7 @@ export function ComputerUseSettings() {
   const [computerUseEnabled, setComputerUseEnabled] = useState(true)
   const [clipboardAccess, setClipboardAccess] = useState(true)
   const [systemKeys, setSystemKeys] = useState(true)
+  const configMutationSeqRef = useRef(0)
 
   const fetchStatus = useCallback(async () => {
     setCheckState('loading')
@@ -73,7 +74,11 @@ export function ComputerUseSettings() {
     }
   }, [])
 
-  const applyConfig = useCallback((configResult: Awaited<ReturnType<typeof computerUseApi.getAuthorizedApps>>) => {
+  const applyConfig = useCallback((
+    configResult: Awaited<ReturnType<typeof computerUseApi.getAuthorizedApps>>,
+    requestSeq = configMutationSeqRef.current,
+  ) => {
+    if (requestSeq !== configMutationSeqRef.current) return
     setComputerUseEnabled(configResult.enabled)
     setAuthorizedApps(configResult.authorizedApps)
     setAuthorizedBundleIds(new Set(configResult.authorizedApps.map(a => a.bundleId)))
@@ -82,14 +87,16 @@ export function ComputerUseSettings() {
   }, [])
 
   const fetchConfig = useCallback(async () => {
+    const requestSeq = configMutationSeqRef.current
     try {
-      applyConfig(await computerUseApi.getAuthorizedApps())
+      applyConfig(await computerUseApi.getAuthorizedApps(), requestSeq)
     } catch {
       // API not ready
     }
   }, [applyConfig])
 
   const fetchApps = useCallback(async () => {
+    const requestSeq = configMutationSeqRef.current
     setAppsLoading(true)
     try {
       const [appsResult, configResult] = await Promise.all([
@@ -97,7 +104,7 @@ export function ComputerUseSettings() {
         computerUseApi.getAuthorizedApps(),
       ])
       setInstalledApps(appsResult.apps)
-      applyConfig(configResult)
+      applyConfig(configResult, requestSeq)
     } catch {
       // API not ready
     } finally {
@@ -132,6 +139,7 @@ export function ComputerUseSettings() {
   }
 
   const toggleApp = (app: InstalledApp) => {
+    configMutationSeqRef.current += 1
     const newSet = new Set(authorizedBundleIds)
     let newAuthorized = [...authorizedApps]
     if (newSet.has(app.bundleId)) {
@@ -159,6 +167,7 @@ export function ComputerUseSettings() {
   }
 
   const toggleFlag = (flag: 'clipboard' | 'systemKeys', value: boolean) => {
+    configMutationSeqRef.current += 1
     if (flag === 'clipboard') setClipboardAccess(value)
     else setSystemKeys(value)
 
@@ -173,6 +182,7 @@ export function ComputerUseSettings() {
   }
 
   const toggleComputerUseEnabled = (value: boolean) => {
+    configMutationSeqRef.current += 1
     setComputerUseEnabled(value)
     computerUseApi.setAuthorizedApps({ enabled: value }).then(() => {
       setAppsSaved(true)

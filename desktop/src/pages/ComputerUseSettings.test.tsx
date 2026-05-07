@@ -50,6 +50,14 @@ const enabledConfig = {
   },
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(res => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
+
 describe('ComputerUseSettings', () => {
   beforeEach(() => {
     useSettingsStore.setState({ locale: 'en' })
@@ -93,6 +101,116 @@ describe('ComputerUseSettings', () => {
 
     expect(computerUseApiMock.setAuthorizedApps).toHaveBeenCalledWith({
       enabled: false,
+    })
+  })
+
+  it('keeps the user-selected enablement when a stale refresh resolves later', async () => {
+    const staleRefresh = deferred<typeof enabledConfig>()
+    computerUseApiMock.getStatus.mockResolvedValue({
+      ...readyStatus,
+      venv: {
+        ...readyStatus.venv,
+        created: true,
+      },
+      dependencies: {
+        ...readyStatus.dependencies,
+        installed: true,
+      },
+    })
+    computerUseApiMock.getInstalledApps.mockResolvedValue({ apps: [] })
+    computerUseApiMock.getAuthorizedApps
+      .mockResolvedValueOnce({
+        ...enabledConfig,
+        enabled: false,
+      })
+      .mockReturnValueOnce(staleRefresh.promise)
+
+    render(<ComputerUseSettings />)
+
+    const toggle = await screen.findByLabelText('Enabled')
+    await waitFor(() => expect(toggle).not.toBeChecked())
+    await waitFor(() => expect(computerUseApiMock.getInstalledApps).toHaveBeenCalled())
+
+    await act(async () => {
+      fireEvent.click(toggle)
+      await Promise.resolve()
+    })
+
+    expect(toggle).toBeChecked()
+
+    await act(async () => {
+      staleRefresh.resolve({
+        ...enabledConfig,
+        enabled: false,
+      })
+      await staleRefresh.promise
+    })
+
+    expect(toggle).toBeChecked()
+  })
+
+  it('saves app and grant flag changes from the ready environment view', async () => {
+    computerUseApiMock.getStatus.mockResolvedValue({
+      ...readyStatus,
+      venv: {
+        ...readyStatus.venv,
+        created: true,
+      },
+      dependencies: {
+        ...readyStatus.dependencies,
+        installed: true,
+      },
+    })
+    computerUseApiMock.getInstalledApps.mockResolvedValue({
+      apps: [
+        {
+          bundleId: 'com.example.Preview',
+          displayName: 'Preview',
+          path: '/Applications/Preview.app',
+        },
+      ],
+    })
+
+    render(<ComputerUseSettings />)
+
+    await screen.findByText('Preview')
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Preview'))
+      await Promise.resolve()
+    })
+
+    expect(computerUseApiMock.setAuthorizedApps).toHaveBeenCalledWith({
+      authorizedApps: [
+        expect.objectContaining({
+          bundleId: 'com.example.Preview',
+          displayName: 'Preview',
+        }),
+      ],
+      grantFlags: {
+        clipboardRead: true,
+        clipboardWrite: true,
+        systemKeyCombos: true,
+      },
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Clipboard Access'))
+      await Promise.resolve()
+    })
+
+    expect(computerUseApiMock.setAuthorizedApps).toHaveBeenCalledWith({
+      authorizedApps: [
+        expect.objectContaining({
+          bundleId: 'com.example.Preview',
+          displayName: 'Preview',
+        }),
+      ],
+      grantFlags: {
+        clipboardRead: false,
+        clipboardWrite: false,
+        systemKeyCombos: true,
+      },
     })
   })
 })

@@ -8,6 +8,7 @@ import { useSessionRuntimeStore } from './sessionRuntimeStore'
 import { useTabStore } from './tabStore'
 import { randomSpinnerVerb } from '../config/spinnerVerbs'
 import { notifyDesktop } from '../lib/desktopNotifications'
+import { deriveSessionTitle, isPlaceholderSessionTitle } from '../lib/sessionTitle'
 import { AGENT_LIFECYCLE_TYPES } from '../types/team'
 import type { MessageEntry } from '../types/session'
 import type { PermissionMode } from '../types/settings'
@@ -323,6 +324,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     if (!isMemberSession && allTasksDone) {
       void taskStore.resetCompletedTasks()
+    }
+
+    if (!isMemberSession) {
+      updateOptimisticSessionTitle(sessionId, userFacingContent)
     }
 
     set((s) => {
@@ -923,6 +928,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 }))
+
+function updateOptimisticSessionTitle(sessionId: string, content: string): void {
+  const title = deriveSessionTitle(content)
+  if (!title) return
+
+  const session = useSessionStore.getState().sessions.find((item) => item.id === sessionId)
+  if (!session || session.messageCount > 0 || !isPlaceholderSessionTitle(session.title)) return
+
+  useSessionStore.getState().updateSessionTitle(sessionId, title)
+  useTabStore.getState().updateTabTitle(sessionId, title)
+}
 
 // ─── History mapping helpers (unchanged from original) ─────────
 

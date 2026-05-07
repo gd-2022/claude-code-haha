@@ -180,7 +180,7 @@ describe('EmptySession', () => {
 
     expect(useTabStore.getState().activeTabId).toBe('draft-session')
     expect(useTabStore.getState().tabs).toEqual([
-      { sessionId: 'draft-session', title: 'New Session', type: 'session', status: 'idle' },
+      { sessionId: 'draft-session', title: 'draft question', type: 'session', status: 'idle' },
     ])
     expect(useSessionStore.getState().sessions[0]).toMatchObject({
       id: 'draft-session',

@@ -16,6 +16,10 @@ const {
   resetCompletedTasksMock,
   refreshTasksMock,
   notifyDesktopMock,
+  updateTabTitleMock,
+  updateTabStatusMock,
+  updateSessionTitleMock,
+  sessionStoreSnapshot,
   cliTaskStoreSnapshot,
 } = vi.hoisted(() => ({
   sendMock: vi.fn(),
@@ -31,6 +35,21 @@ const {
   resetCompletedTasksMock: vi.fn(async () => {}),
   refreshTasksMock: vi.fn(),
   notifyDesktopMock: vi.fn(),
+  updateTabTitleMock: vi.fn(),
+  updateTabStatusMock: vi.fn(),
+  updateSessionTitleMock: vi.fn(),
+  sessionStoreSnapshot: {
+    sessions: [] as Array<{
+      id: string
+      title: string
+      createdAt: string
+      modifiedAt: string
+      messageCount: number
+      projectPath: string
+      workDir: string | null
+      workDirExists: boolean
+    }>,
+  },
   cliTaskStoreSnapshot: {
     tasks: [] as Array<{ id: string; subject: string; status: string; activeForm?: string }>,
     sessionId: null as string | null,
@@ -73,8 +92,8 @@ vi.mock('./teamStore', () => ({
 vi.mock('./tabStore', () => ({
   useTabStore: {
     getState: () => ({
-      updateTabStatus: vi.fn(),
-      updateTabTitle: vi.fn(),
+      updateTabStatus: updateTabStatusMock,
+      updateTabTitle: updateTabTitleMock,
     }),
   },
 }))
@@ -82,7 +101,8 @@ vi.mock('./tabStore', () => ({
 vi.mock('./sessionStore', () => ({
   useSessionStore: {
     getState: () => ({
-      updateSessionTitle: vi.fn(),
+      sessions: sessionStoreSnapshot.sessions,
+      updateSessionTitle: updateSessionTitleMock,
     }),
   },
 }))
@@ -120,6 +140,10 @@ describe('chatStore history mapping', () => {
     resetCompletedTasksMock.mockReset()
     refreshTasksMock.mockReset()
     notifyDesktopMock.mockReset()
+    updateTabTitleMock.mockReset()
+    updateTabStatusMock.mockReset()
+    updateSessionTitleMock.mockReset()
+    sessionStoreSnapshot.sessions = []
     cliTaskStoreSnapshot.tasks = []
     cliTaskStoreSnapshot.sessionId = null
     useSessionRuntimeStore.setState({ selections: {} })
@@ -1406,5 +1430,28 @@ describe('chatStore history mapping', () => {
     useChatStore.getState().connectToSession(TEST_SESSION_ID)
 
     expect(fetchSessionTasksMock).toHaveBeenCalledWith(TEST_SESSION_ID)
+  })
+
+  it('optimistically titles a new placeholder session from the first user message', () => {
+    sessionStoreSnapshot.sessions = [{
+      id: TEST_SESSION_ID,
+      title: 'New Session',
+      createdAt: '2026-05-07T00:00:00.000Z',
+      modifiedAt: '2026-05-07T00:00:00.000Z',
+      messageCount: 0,
+      projectPath: '',
+      workDir: '/workspace/project',
+      workDirExists: true,
+    }]
+
+    useChatStore.getState().sendMessage(TEST_SESSION_ID, '开始优化UI')
+
+    expect(updateSessionTitleMock).toHaveBeenCalledWith(TEST_SESSION_ID, '开始优化UI')
+    expect(updateTabTitleMock).toHaveBeenCalledWith(TEST_SESSION_ID, '开始优化UI')
+    expect(sendMock).toHaveBeenCalledWith(TEST_SESSION_ID, {
+      type: 'user_message',
+      content: '开始优化UI',
+      attachments: undefined,
+    })
   })
 })

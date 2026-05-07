@@ -817,6 +817,47 @@ describe('WebSocket Chat Integration', () => {
     expect(statusMsgs[0].state).toBe('thinking')
   })
 
+  it('emits the derived session title before the first response completes', async () => {
+    const sessionId = `title-fast-${crypto.randomUUID()}`
+    const messages: any[] = []
+    const ws = new WebSocket(`${wsUrl}/ws/${sessionId}`)
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        ws.close()
+        reject(new Error('Timed out waiting for derived session title'))
+      }, 5000)
+
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data as string)
+        messages.push(msg)
+        if (msg.type === 'connected') {
+          ws.send(JSON.stringify({
+            type: 'user_message',
+            content: '开始优化UI',
+          }))
+          return
+        }
+        if (msg.type === 'message_complete') {
+          clearTimeout(timeout)
+          ws.close()
+          resolve()
+        }
+      }
+      ws.onerror = () => {
+        clearTimeout(timeout)
+        reject(new Error(`WebSocket error for title session ${sessionId}`))
+      }
+    })
+
+    const titleIndex = messages.findIndex((msg) => msg.type === 'session_title_updated')
+    const completionIndex = messages.findIndex((msg) => msg.type === 'message_complete')
+    expect(titleIndex).toBeGreaterThan(-1)
+    expect(completionIndex).toBeGreaterThan(-1)
+    expect(messages[titleIndex].title).toBe('开始优化UI')
+    expect(titleIndex).toBeLessThan(completionIndex)
+  })
+
   it('should start desktop sessions with disabled thinking when configured', async () => {
     const sessionId = `chat-thinking-disabled-${crypto.randomUUID()}`
     const originalStartSession = conversationService.startSession.bind(conversationService)

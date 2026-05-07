@@ -53,6 +53,7 @@ const sessionTitleState = new Map<string, {
   hasCustomTitle: boolean
   firstUserMessage: string
   allUserMessages: string[]
+  startedGenerationCounts: Set<number>
 }>()
 
 const runtimeOverrides = new Map<string, {
@@ -271,6 +272,25 @@ async function handleUserMessage(
     }
   }
 
+  // Track and emit the first placeholder title before CLI startup/streaming.
+  let titleState = sessionTitleState.get(sessionId)
+  if (!titleState) {
+    titleState = {
+      userMessageCount: 0,
+      hasCustomTitle: !!(await sessionService.getCustomTitle(sessionId)),
+      firstUserMessage: '',
+      allUserMessages: [],
+      startedGenerationCounts: new Set<number>(),
+    }
+    sessionTitleState.set(sessionId, titleState)
+  }
+  titleState.userMessageCount++
+  titleState.allUserMessages.push(message.content)
+  if (titleState.userMessageCount === 1) {
+    titleState.firstUserMessage = message.content
+  }
+  triggerTitleGeneration(ws, sessionId)
+
   // 启动 CLI 子进程（如果还没有）
   try {
     await ensureCliSessionStarted(ws, sessionId, 'user_message')
@@ -288,23 +308,6 @@ async function handleUserMessage(
     })
     sendMessage(ws, { type: 'status', state: 'idle' })
     return
-  }
-
-  // Track user message for title generation
-  let titleState = sessionTitleState.get(sessionId)
-  if (!titleState) {
-    titleState = {
-      userMessageCount: 0,
-      hasCustomTitle: !!(await sessionService.getCustomTitle(sessionId)),
-      firstUserMessage: '',
-      allUserMessages: [],
-    }
-    sessionTitleState.set(sessionId, titleState)
-  }
-  titleState.userMessageCount++
-  titleState.allUserMessages.push(message.content)
-  if (titleState.userMessageCount === 1) {
-    titleState.firstUserMessage = message.content
   }
 
   // Register the callback before sending the turn so startup errors are not lost.
@@ -627,6 +630,8 @@ function triggerTitleGeneration(ws: ServerWebSocket<WebSocketData>, sessionId: s
 
   // Generate on count 1 (first response) and count 3 (with more context)
   if (count !== 1 && count !== 3) return
+  if (state.startedGenerationCounts.has(count)) return
+  state.startedGenerationCounts.add(count)
 
   const text = count === 1
     ? state.firstUserMessage

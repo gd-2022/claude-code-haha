@@ -22,6 +22,14 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
+
 describe('sessionStore', () => {
   beforeEach(() => {
     createMock.mockReset()
@@ -62,6 +70,45 @@ describe('sessionStore', () => {
       workDir: 'D:/workspace/code/myself_code/cc-haha',
     })
     expect(listMock).toHaveBeenCalledOnce()
+  })
+
+  it('keeps an optimistic local title when a background refresh still returns a placeholder', async () => {
+    const refresh = createDeferred<{
+      sessions: Array<{
+        id: string
+        title: string
+        createdAt: string
+        modifiedAt: string
+        messageCount: number
+        projectPath: string
+        workDir: string | null
+        workDirExists: boolean
+      }>
+      total: number
+    }>()
+    createMock.mockResolvedValue({ sessionId: 'session-title-1', workDir: '/workspace/project' })
+    listMock.mockReturnValue(refresh.promise)
+
+    await useSessionStore.getState().createSession('/workspace/project')
+    useSessionStore.getState().updateSessionTitle('session-title-1', '开始优化UI')
+
+    refresh.resolve({
+      sessions: [{
+        id: 'session-title-1',
+        title: 'Untitled Session',
+        createdAt: '2026-05-07T00:00:00.000Z',
+        modifiedAt: '2026-05-07T00:00:01.000Z',
+        messageCount: 0,
+        projectPath: '',
+        workDir: '/workspace/project',
+        workDirExists: true,
+      }],
+      total: 1,
+    })
+    await refresh.promise
+    await delay(0)
+
+    expect(useSessionStore.getState().sessions[0]?.title).toBe('开始优化UI')
   })
 
   it('forwards direct branch switch repository options when creating a session', async () => {

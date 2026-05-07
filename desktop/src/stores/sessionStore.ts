@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { sessionsApi, type CreateSessionRepositoryOptions } from '../api/sessions'
 import { useSessionRuntimeStore } from './sessionRuntimeStore'
 import type { SessionListItem } from '../types/session'
+import { isPlaceholderSessionTitle } from '../lib/sessionTitle'
 
 type CreateSessionOptions = {
   repository?: CreateSessionRepositoryOptions
@@ -36,17 +37,22 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set({ isLoading: true, error: null })
     try {
       const { sessions: raw } = await sessionsApi.list({ project, limit: 100 })
-      // Deduplicate by session ID — keep the most recently modified entry
-      const byId = new Map<string, SessionListItem>()
-      for (const s of raw) {
-        const existing = byId.get(s.id)
-        if (!existing || new Date(s.modifiedAt) > new Date(existing.modifiedAt)) {
-          byId.set(s.id, s)
+      set((state) => {
+        const currentById = new Map(state.sessions.map((session) => [session.id, session]))
+        // Deduplicate by session ID - keep the most recently modified entry.
+        const byId = new Map<string, SessionListItem>()
+        for (const s of raw) {
+          const current = currentById.get(s.id)
+          const candidate = preserveLocalTitle(current, s)
+          const existing = byId.get(s.id)
+          if (!existing || new Date(candidate.modifiedAt) > new Date(existing.modifiedAt)) {
+            byId.set(s.id, candidate)
+          }
         }
-      }
-      const sessions = [...byId.values()]
-      const availableProjects = [...new Set(sessions.map((s) => s.projectPath).filter(Boolean))].sort()
-      set({ sessions, availableProjects, isLoading: false })
+        const sessions = [...byId.values()]
+        const availableProjects = [...new Set(sessions.map((s) => s.projectPath).filter(Boolean))].sort()
+        return { sessions, availableProjects, isLoading: false }
+      })
     } catch (err) {
       set({ error: (err as Error).message, isLoading: false })
     }
@@ -109,3 +115,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   setActiveSession: (id) => set({ activeSessionId: id }),
   setSelectedProjects: (projects) => set({ selectedProjects: projects }),
 }))
+
+function preserveLocalTitle(
+  current: SessionListItem | undefined,
+  incoming: SessionListItem,
+): SessionListItem {
+  if (!current) return incoming
+  if (isPlaceholderSessionTitle(incoming.title) && !isPlaceholderSessionTitle(current.title)) {
+    return { ...incoming, title: current.title }
+  }
+  return incoming
+}

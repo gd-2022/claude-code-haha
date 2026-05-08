@@ -1493,6 +1493,24 @@ export function sendToSession(sessionId: string, message: ServerMessage): boolea
   return true
 }
 
+export function closeSessionConnection(sessionId: string, reason = 'session closed'): boolean {
+  const cleanupTimer = sessionCleanupTimers.get(sessionId)
+  if (cleanupTimer) {
+    clearTimeout(cleanupTimer)
+    sessionCleanupTimers.delete(sessionId)
+  }
+  computerUseApprovalService.cancelSession(sessionId)
+  conversationService.clearOutputCallbacks(sessionId)
+  cleanupSessionRuntimeState(sessionId)
+
+  const ws = activeSessions.get(sessionId)
+  if (!ws) return false
+
+  activeSessions.delete(sessionId)
+  ws.close(1000, reason)
+  return true
+}
+
 export function getActiveSessionIds(): string[] {
   return Array.from(activeSessions.keys())
 }

@@ -17,7 +17,7 @@
 import { sessionService } from '../services/sessionService.js'
 import { conversationService } from '../services/conversationService.js'
 import { ApiError, errorResponse } from '../middleware/errorHandler.js'
-import { getSlashCommands } from '../ws/handler.js'
+import { closeSessionConnection, getSlashCommands } from '../ws/handler.js'
 import { getCommandName } from '../../commands.js'
 import { getSkillDirCommands } from '../../skills/loadSkillsDir.js'
 import { WorkspaceService } from '../services/workspaceService.js'
@@ -32,6 +32,7 @@ import {
   previewSessionRewind,
   type RewindTargetSelector,
 } from '../services/sessionRewindService.js'
+import { SessionStore } from '../../../adapters/common/session-store.js'
 
 const workspaceService = new WorkspaceService(
   async (sessionId) => (
@@ -353,7 +354,16 @@ async function deleteSession(sessionId: string): Promise<Response> {
     conversationService.unmarkSessionDeleted(sessionId)
     throw error
   }
+  closeSessionConnection(sessionId, 'session deleted')
+  cleanupAdapterSessionMappings(sessionId)
   return Response.json({ ok: true })
+}
+
+function cleanupAdapterSessionMappings(sessionId: string): void {
+  const removedChatIds = new SessionStore().deleteBySessionId(sessionId)
+  if (removedChatIds.length > 0) {
+    console.log(`[Sessions API] Removed ${removedChatIds.length} adapter session mapping(s) for ${sessionId}`)
+  }
 }
 
 async function getSessionSlashCommands(sessionId: string): Promise<Response> {

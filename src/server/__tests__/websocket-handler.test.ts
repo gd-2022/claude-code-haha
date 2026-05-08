@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import type { ServerWebSocket } from 'bun'
 import {
   __resetWebSocketHandlerStateForTests,
+  closeSessionConnection,
   getActiveSessionIds,
   handleWebSocket,
   type WebSocketData,
@@ -51,5 +52,21 @@ describe('WebSocket handler session isolation', () => {
     expect(getActiveSessionIds()).toContain(sessionId)
     expect(clearCallbacks).not.toHaveBeenCalled()
     expect(cancelComputerUse).not.toHaveBeenCalled()
+  })
+
+  it('closes and removes an active client socket when a session is deleted', () => {
+    const sessionId = `delete-${crypto.randomUUID()}`
+    const ws = makeClientSocket(sessionId)
+    const clearCallbacks = spyOn(conversationService, 'clearOutputCallbacks')
+    const cancelComputerUse = spyOn(computerUseApprovalService, 'cancelSession')
+
+    handleWebSocket.open(ws)
+
+    expect(closeSessionConnection(sessionId, 'session deleted')).toBe(true)
+
+    expect(getActiveSessionIds()).not.toContain(sessionId)
+    expect(ws.close).toHaveBeenCalledWith(1000, 'session deleted')
+    expect(clearCallbacks).toHaveBeenCalledWith(sessionId)
+    expect(cancelComputerUse).toHaveBeenCalledWith(sessionId)
   })
 })

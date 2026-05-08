@@ -1015,7 +1015,7 @@ describe('SessionService', () => {
     expect(context.branches.some((branch) => branch.name.startsWith('worktree-desktop-'))).toBe(false)
   })
 
-  it('should defer dirty direct branch launch validation until CLI startup', async () => {
+  it('should let git carry compatible dirty changes during direct branch launch', async () => {
     const workDir = await createCleanGitRepo(tmpDir)
     await fs.writeFile(path.join(workDir, 'README.md'), 'main\nlocal-pricing-edit\n')
 
@@ -1027,11 +1027,36 @@ describe('SessionService', () => {
     expect(git(workDir, 'branch', '--show-current')).toBe('main\n')
     expect(await fs.readFile(path.join(workDir, 'README.md'), 'utf-8'))
       .toContain('local-pricing-edit')
-    await expect(prepareSessionWorkspace(
+    const prepared = await prepareSessionWorkspace(
       workDir,
       { branch: 'feature/rail', worktree: false },
       sessionId,
-    )).rejects.toMatchObject({ code: 'REPOSITORY_DIRTY_WORKTREE' })
+    )
+
+    expect(prepared.workDir).toBe(await fs.realpath(workDir))
+    expect(git(workDir, 'branch', '--show-current')).toBe('feature/rail\n')
+    expect(await fs.readFile(path.join(workDir, 'README.md'), 'utf-8'))
+      .toContain('local-pricing-edit')
+  })
+
+  it('should plan isolated worktrees from dirty source checkouts without switching branches', async () => {
+    const workDir = await createCleanGitRepo(tmpDir)
+    await fs.writeFile(path.join(workDir, 'README.md'), 'main\nlocal-pricing-edit\n')
+
+    const { sessionId } = await service.createSession(
+      workDir,
+      { branch: 'feature/rail', worktree: true },
+    )
+    const launchInfo = await service.getSessionLaunchInfo(sessionId)
+
+    expect(launchInfo?.repository).toMatchObject({
+      branch: 'feature/rail',
+      worktree: true,
+      baseRef: 'feature/rail',
+    })
+    expect(git(workDir, 'branch', '--show-current')).toBe('main\n')
+    expect(await fs.readFile(path.join(workDir, 'README.md'), 'utf-8'))
+      .toContain('local-pricing-edit')
   })
 
   it('should defer checked-out direct branch launch validation until CLI startup', async () => {

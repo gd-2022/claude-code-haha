@@ -482,13 +482,6 @@ async function switchExistingCheckout(
     }
   }
 
-  if (context.dirty) {
-    throw repositoryBadRequest(
-      REPOSITORY_ERROR.dirtyWorktree,
-      'Working tree has uncommitted changes. Enable worktree isolation before starting from another branch.',
-    )
-  }
-
   if (branch.checkedOut) {
     throw repositoryBadRequest(
       REPOSITORY_ERROR.branchCheckedOut,

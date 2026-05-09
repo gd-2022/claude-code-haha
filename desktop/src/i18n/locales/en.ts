@@ -834,6 +834,7 @@ export const en = {
   'chat.select': 'select',
   'chat.dismiss': 'dismiss',
   'chat.stopTitle': 'Stop generation (Cmd+.)',
+  'chat.jumpToLatest': 'Latest',
   'chat.rewindSuccessWithCode': 'Rewound {count} messages and restored tracked files.',
   'chat.rewindSuccessConversationOnly': 'Rewound {count} messages. No file checkpoint was available for this turn.',
   'chat.turnChangesTitle': '{count} files changed',

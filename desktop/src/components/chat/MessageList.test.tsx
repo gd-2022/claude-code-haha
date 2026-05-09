@@ -537,6 +537,191 @@ describe('MessageList nested tool calls', () => {
     expect(scrollIntoView).toHaveBeenCalled()
   })
 
+  it('restores a session scroll position when switching back to a tab', async () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+
+    useTabStore.setState({
+      activeTabId: 'session-a',
+      tabs: [
+        { sessionId: 'session-a', title: 'A', type: 'session' as const, status: 'idle' },
+        { sessionId: 'session-b', title: 'B', type: 'session' as const, status: 'idle' },
+      ],
+    })
+    useChatStore.setState({
+      sessions: {
+        'session-a': makeSessionState({
+          messages: [
+            { id: 'a-user', type: 'user_text', content: 'A prompt', timestamp: 1 },
+            { id: 'a-assistant', type: 'assistant_text', content: 'A response', timestamp: 2 },
+          ],
+        }),
+        'session-b': makeSessionState({
+          messages: [
+            { id: 'b-user', type: 'user_text', content: 'B prompt', timestamp: 1 },
+            { id: 'b-assistant', type: 'assistant_text', content: 'B response', timestamp: 2 },
+          ],
+        }),
+      },
+    })
+
+    const { container } = render(<MessageList />)
+    const scroller = container.querySelector('.overflow-y-auto') as HTMLDivElement
+    let scrollTop = 180
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 1200 })
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 400 })
+    Object.defineProperty(scroller, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value) => {
+        scrollTop = value
+      },
+    })
+
+    fireEvent.scroll(scroller)
+    expect(screen.getByRole('button', { name: 'Latest' })).toBeTruthy()
+
+    act(() => {
+      useTabStore.setState({ activeTabId: 'session-b' })
+    })
+    await waitFor(() => {
+      expect(screen.getByText('B response')).toBeTruthy()
+    })
+
+    scrollTop = 760
+    fireEvent.scroll(scroller)
+
+    act(() => {
+      useTabStore.setState({ activeTabId: 'session-a' })
+    })
+    await waitFor(() => {
+      expect(screen.getByText('A response')).toBeTruthy()
+    })
+
+    expect(scrollTop).toBe(180)
+    expect(screen.getByRole('button', { name: 'Latest' })).toBeTruthy()
+  })
+
+  it('scrolls new sessions to the latest message instead of inheriting another tab position', async () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+
+    useTabStore.setState({
+      activeTabId: 'session-a',
+      tabs: [
+        { sessionId: 'session-a', title: 'A', type: 'session' as const, status: 'idle' },
+        { sessionId: 'session-fresh', title: 'Fresh', type: 'session' as const, status: 'idle' },
+      ],
+    })
+    useChatStore.setState({
+      sessions: {
+        'session-a': makeSessionState({
+          messages: [
+            { id: 'a-user', type: 'user_text', content: 'A prompt', timestamp: 1 },
+            { id: 'a-assistant', type: 'assistant_text', content: 'A response', timestamp: 2 },
+          ],
+        }),
+        'session-fresh': makeSessionState({
+          messages: [
+            { id: 'fresh-user', type: 'user_text', content: 'Fresh prompt', timestamp: 1 },
+            { id: 'fresh-assistant', type: 'assistant_text', content: 'Fresh latest response', timestamp: 2 },
+          ],
+        }),
+      },
+    })
+
+    const { container } = render(<MessageList />)
+    const scroller = container.querySelector('.overflow-y-auto') as HTMLDivElement
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 1200 })
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 400 })
+    Object.defineProperty(scroller, 'scrollTop', {
+      configurable: true,
+      value: 150,
+      writable: true,
+    })
+
+    fireEvent.scroll(scroller)
+    scrollIntoView.mockClear()
+
+    act(() => {
+      useTabStore.setState({ activeTabId: 'session-fresh' })
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Fresh latest response')).toBeTruthy()
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'end' })
+    })
+  })
+
+  it('shows a latest button when reading history and resumes following after clicking it', async () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+
+    useChatStore.setState({
+      sessions: {
+        [ACTIVE_TAB]: makeSessionState({
+          chatState: 'streaming',
+          messages: [
+            {
+              id: 'user-1',
+              type: 'user_text',
+              content: '历史消息',
+              timestamp: 1,
+            },
+          ],
+          streamingText: 'streaming',
+        }),
+      },
+    })
+
+    const { container } = render(<MessageList />)
+    const scroller = container.querySelector('.overflow-y-auto') as HTMLDivElement
+    let scrollTop = 120
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 1000 })
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 400 })
+    Object.defineProperty(scroller, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value) => {
+        scrollTop = value
+      },
+    })
+
+    scrollIntoView.mockClear()
+    fireEvent.scroll(scroller)
+    fireEvent.click(screen.getByRole('button', { name: 'Latest' }))
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'end' })
+    expect(screen.queryByRole('button', { name: 'Latest' })).toBeNull()
+
+    scrollIntoView.mockClear()
+    act(() => {
+      useChatStore.setState((state) => ({
+        sessions: {
+          ...state.sessions,
+          [ACTIVE_TAB]: {
+            ...state.sessions[ACTIVE_TAB]!,
+            streamingText: 'streaming after jump',
+          },
+        },
+      }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('streaming after jump')).toBeTruthy()
+    })
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'end' })
+  })
+
   it('keeps user actions anchored to the right bubble and assistant actions to the left bubble', () => {
     useChatStore.setState({
       sessions: {

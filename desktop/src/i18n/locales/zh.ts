@@ -836,6 +836,7 @@ export const zh: Record<TranslationKey, string> = {
   'chat.select': '选择',
   'chat.dismiss': '关闭',
   'chat.stopTitle': '停止生成 (Cmd+.)',
+  'chat.jumpToLatest': '回到最新',
   'chat.rewindSuccessWithCode': '已回滚 {count} 条消息，并恢复相关文件。',
   'chat.rewindSuccessConversationOnly': '已回滚 {count} 条消息。这一轮没有可用的文件检查点。',
   'chat.turnChangesTitle': '{count} 个文件已更改',

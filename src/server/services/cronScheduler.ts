@@ -667,7 +667,10 @@ export class CronScheduler {
       PWD: workDir,
       CC_HAHA_SKIP_DOTENV: '1',
       ...(explicitProviderEnv
-        ? { CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: '1' }
+        ? {
+            CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: '1',
+            CLAUDE_CODE_ENTRYPOINT: 'sdk-cli',
+          }
         : {}),
       ...(explicitProviderEnv ?? {}),
       ...(this.shouldMarkManagedOAuth(task.providerId)

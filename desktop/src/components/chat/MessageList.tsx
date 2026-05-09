@@ -1,4 +1,5 @@
-import { useRef, useEffect, useMemo, memo, useState, useCallback } from 'react'
+import { useRef, useEffect, useMemo, memo, useState, useCallback, useLayoutEffect } from 'react'
+import { ArrowDown } from 'lucide-react'
 import { ApiError } from '../../api/client'
 import { sessionsApi, type SessionTurnCheckpoint } from '../../api/sessions'
 import { useChatStore } from '../../stores/chatStore'
@@ -246,12 +247,52 @@ type MessageListProps = {
 }
 
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 48
+const MAX_SCROLL_SNAPSHOTS = 100
+const CHAT_SCROLL_AREA_CLASS = [
+  'chat-scroll-area',
+  '[scrollbar-width:auto]',
+  '[scrollbar-color:color-mix(in_srgb,var(--color-outline)_72%,transparent)_transparent]',
+  '[&::-webkit-scrollbar]:w-2.5',
+  '[&::-webkit-scrollbar-track]:bg-transparent',
+  '[&::-webkit-scrollbar-thumb]:rounded-full',
+  '[&::-webkit-scrollbar-thumb]:border-[3px]',
+  '[&::-webkit-scrollbar-thumb]:border-transparent',
+  '[&::-webkit-scrollbar-thumb]:bg-[color-mix(in_srgb,var(--color-outline)_74%,transparent)]',
+  '[&::-webkit-scrollbar-thumb]:bg-clip-content',
+  '[&::-webkit-scrollbar-thumb:hover]:border-2',
+  '[&::-webkit-scrollbar-thumb:hover]:bg-[color-mix(in_srgb,var(--color-outline)_90%,transparent)]',
+].join(' ')
+
+type SessionScrollSnapshot = {
+  scrollTop: number
+  wasAtBottom: boolean
+}
+
+const sessionScrollSnapshots = new Map<string, SessionScrollSnapshot>()
 
 function isNearScrollBottom(element: HTMLElement) {
   return (
     element.scrollHeight - element.scrollTop - element.clientHeight <=
     AUTO_SCROLL_BOTTOM_THRESHOLD_PX
   )
+}
+
+function rememberSessionScroll(sessionId: string, element: HTMLElement) {
+  if (sessionScrollSnapshots.size >= MAX_SCROLL_SNAPSHOTS && !sessionScrollSnapshots.has(sessionId)) {
+    const oldestSessionId = sessionScrollSnapshots.keys().next().value
+    if (oldestSessionId) {
+      sessionScrollSnapshots.delete(oldestSessionId)
+    }
+  }
+
+  sessionScrollSnapshots.set(sessionId, {
+    scrollTop: element.scrollTop,
+    wasAtBottom: isNearScrollBottom(element),
+  })
+}
+
+function clampScrollTop(element: HTMLElement, scrollTop: number) {
+  return Math.max(0, Math.min(scrollTop, element.scrollHeight - element.clientHeight))
 }
 
 export function MessageList({ sessionId, compact = false }: MessageListProps = {}) {
@@ -283,23 +324,61 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
   const [isLoadingTurnChangeCards, setIsLoadingTurnChangeCards] = useState(false)
   const [rewindingTurnId, setRewindingTurnId] = useState<string | null>(null)
   const [turnUndoConfirmTargetId, setTurnUndoConfirmTargetId] = useState<string | null>(null)
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false)
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior) => {
+    shouldAutoScrollRef.current = true
+    bottomRef.current?.scrollIntoView?.({ behavior, block: 'end' })
+    const container = scrollContainerRef.current
+    if (container && resolvedSessionId) {
+      sessionScrollSnapshots.set(resolvedSessionId, {
+        scrollTop: Math.max(0, container.scrollHeight - container.clientHeight),
+        wasAtBottom: true,
+      })
+    }
+    setShowJumpToLatest(false)
+  }, [resolvedSessionId])
 
   const updateAutoScrollState = useCallback(() => {
     const container = scrollContainerRef.current
     if (!container) return
-    shouldAutoScrollRef.current = isNearScrollBottom(container)
-  }, [])
+    const isAtBottom = isNearScrollBottom(container)
+    shouldAutoScrollRef.current = isAtBottom
+    setShowJumpToLatest(!isAtBottom)
+
+    if (resolvedSessionId) {
+      rememberSessionScroll(resolvedSessionId, container)
+    }
+  }, [resolvedSessionId])
+
+  useLayoutEffect(() => {
+    if (lastSessionIdRef.current !== resolvedSessionId) {
+      const snapshot = resolvedSessionId ? sessionScrollSnapshots.get(resolvedSessionId) : undefined
+      shouldAutoScrollRef.current = snapshot?.wasAtBottom ?? true
+      lastSessionIdRef.current = resolvedSessionId
+
+      const container = scrollContainerRef.current
+      if (container && snapshot && !snapshot.wasAtBottom) {
+        container.scrollTop = clampScrollTop(container, snapshot.scrollTop)
+        setShowJumpToLatest(true)
+      } else {
+        scrollToBottom('auto')
+      }
+    }
+  }, [resolvedSessionId, scrollToBottom])
 
   useEffect(() => {
-    if (lastSessionIdRef.current !== resolvedSessionId) {
-      shouldAutoScrollRef.current = true
-      lastSessionIdRef.current = resolvedSessionId
+    if (!shouldAutoScrollRef.current) {
+      setShowJumpToLatest(true)
+      return
     }
 
-    if (!shouldAutoScrollRef.current) return
+    scrollToBottom('smooth')
+  }, [messages.length, resolvedSessionId, scrollToBottom, streamingText])
 
-    bottomRef.current?.scrollIntoView?.({ behavior: 'smooth' })
-  }, [messages.length, resolvedSessionId, streamingText])
+  const handleJumpToLatest = useCallback(() => {
+    scrollToBottom('smooth')
+  }, [scrollToBottom])
 
   const { toolResultMap, childToolCallsByParent, renderItems } = useMemo(
     () => buildRenderModel(messages),
@@ -446,83 +525,98 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
   ])
 
   return (
-    <div
-      ref={scrollContainerRef}
-      onScroll={updateAutoScrollState}
-      className={`flex-1 overflow-y-auto ${compact ? 'px-3 py-3 pb-5' : 'px-4 py-4'}`}
-    >
-      <div className={compact ? 'mx-auto max-w-full' : 'mx-auto max-w-[860px]'}>
-        {renderItems.map((item, index) => {
-          const cardsForItem = turnCardsByRenderIndex.get(index) ?? []
+    <div className="relative min-h-0 flex-1">
+      <div
+        ref={scrollContainerRef}
+        onScroll={updateAutoScrollState}
+        className={`${CHAT_SCROLL_AREA_CLASS} h-full overflow-y-auto ${compact ? 'px-3 py-3 pb-5' : 'px-4 py-4'}`}
+      >
+        <div className={compact ? 'mx-auto max-w-full' : 'mx-auto max-w-[860px]'}>
+          {renderItems.map((item, index) => {
+            const cardsForItem = turnCardsByRenderIndex.get(index) ?? []
 
-          return (
-            <div key={item.kind === 'tool_group' ? item.id : item.message.id}>
-              {item.kind === 'tool_group' ? (
-                <ToolCallGroup
-                  toolCalls={item.toolCalls}
-                  resultMap={toolResultMap}
-                  childToolCallsByParent={childToolCallsByParent}
-                  agentTaskNotifications={agentTaskNotifications}
-                  isStreaming={
-                    chatState === 'tool_executing' &&
-                    item.toolCalls.some((tc) => !toolResultMap.has(tc.toolUseId))
-                  }
-                />
-              ) : (
-                <MessageBlock
-                  message={item.message}
-                  activeThinkingId={activeThinkingId}
-                  agentTaskNotifications={agentTaskNotifications}
-                  toolResult={
-                    item.message.type === 'tool_use'
-                      ? (() => {
-                          const result = toolResultMap.get(item.message.toolUseId)
-                          return result ? { content: result.content, isError: result.isError } : null
-                        })()
-                      : null
-                  }
-                />
-              )}
+            return (
+              <div key={item.kind === 'tool_group' ? item.id : item.message.id}>
+                {item.kind === 'tool_group' ? (
+                  <ToolCallGroup
+                    toolCalls={item.toolCalls}
+                    resultMap={toolResultMap}
+                    childToolCallsByParent={childToolCallsByParent}
+                    agentTaskNotifications={agentTaskNotifications}
+                    isStreaming={
+                      chatState === 'tool_executing' &&
+                      item.toolCalls.some((tc) => !toolResultMap.has(tc.toolUseId))
+                    }
+                  />
+                ) : (
+                  <MessageBlock
+                    message={item.message}
+                    activeThinkingId={activeThinkingId}
+                    agentTaskNotifications={agentTaskNotifications}
+                    toolResult={
+                      item.message.type === 'tool_use'
+                        ? (() => {
+                            const result = toolResultMap.get(item.message.toolUseId)
+                            return result ? { content: result.content, isError: result.isError } : null
+                          })()
+                        : null
+                    }
+                  />
+                )}
 
-              {resolvedSessionId && cardsForItem.map((card) => (
-                <CurrentTurnChangeCard
-                  key={`turn-change-${card.target.messageId}`}
-                  sessionId={resolvedSessionId}
-                  targetUserMessageId={card.checkpoint.target.targetUserMessageId}
-                  checkpoint={card.checkpoint}
-                  workDir={card.workDir}
-                  error={turnActionErrors[card.target.messageId] ?? null}
-                  isUndoing={rewindingTurnId === card.target.messageId}
-                  isLatest={card.isLatest}
-                  onUndo={() => {
-                    setTurnUndoConfirmTargetId(card.target.messageId)
-                  }}
-                />
-              ))}
+                {resolvedSessionId && cardsForItem.map((card) => (
+                  <CurrentTurnChangeCard
+                    key={`turn-change-${card.target.messageId}`}
+                    sessionId={resolvedSessionId}
+                    targetUserMessageId={card.checkpoint.target.targetUserMessageId}
+                    checkpoint={card.checkpoint}
+                    workDir={card.workDir}
+                    error={turnActionErrors[card.target.messageId] ?? null}
+                    isUndoing={rewindingTurnId === card.target.messageId}
+                    isLatest={card.isLatest}
+                    onUndo={() => {
+                      setTurnUndoConfirmTargetId(card.target.messageId)
+                    }}
+                  />
+                ))}
+              </div>
+            )
+          })}
+
+          {streamingText.trim() && (
+            <AssistantMessage content={streamingText} isStreaming={chatState === 'streaming'} />
+          )}
+
+          {/* Show StreamingIndicator when:
+              - tool_executing: tool is running
+              - thinking but no active ThinkingBlock yet: the gap between
+                sending a message and receiving the first thinking delta */}
+          {(chatState === 'tool_executing' || (chatState === 'thinking' && !activeThinkingId)) && (
+            <StreamingIndicator />
+          )}
+
+          {!isLoadingTurnChangeCards && turnChangeCards.length === 0 && turnChangeLoadError && (
+            <div className="mx-auto mb-5 w-full max-w-[860px] rounded-[var(--radius-lg)] border border-[var(--color-error)]/25 bg-[var(--color-error-container)]/18 px-4 py-3 text-xs text-[var(--color-error)]">
+              {turnChangeLoadError}
             </div>
-          )
-        })}
+          )}
 
-        {streamingText.trim() && (
-          <AssistantMessage content={streamingText} isStreaming={chatState === 'streaming'} />
-        )}
-
-        {/* Show StreamingIndicator when:
-            - tool_executing: tool is running
-            - thinking but no active ThinkingBlock yet: the gap between
-              sending a message and receiving the first thinking delta */}
-        {(chatState === 'tool_executing' || (chatState === 'thinking' && !activeThinkingId)) && (
-          <StreamingIndicator />
-        )}
-
-        {!isLoadingTurnChangeCards && turnChangeCards.length === 0 && turnChangeLoadError && (
-          <div className="mx-auto mb-5 w-full max-w-[860px] rounded-[var(--radius-lg)] border border-[var(--color-error)]/25 bg-[var(--color-error-container)]/18 px-4 py-3 text-xs text-[var(--color-error)]">
-            {turnChangeLoadError}
-          </div>
-        )}
-
-        <div ref={bottomRef} />
+          <div ref={bottomRef} />
+        </div>
       </div>
+
+      {showJumpToLatest && (
+        <button
+          type="button"
+          onClick={handleJumpToLatest}
+          title={t('chat.jumpToLatest')}
+          aria-label={t('chat.jumpToLatest')}
+          className="absolute bottom-4 right-5 z-20 flex h-9 items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] px-3 text-xs font-medium text-[var(--color-text-primary)] shadow-[var(--shadow-dropdown)] transition-colors hover:border-[var(--color-brand)]/50 hover:bg-[var(--color-surface-container-low)]"
+        >
+          <ArrowDown size={15} aria-hidden="true" />
+          <span>{t('chat.jumpToLatest')}</span>
+        </button>
+      )}
 
       <ConfirmDialog
         open={Boolean(confirmTurnCard)}

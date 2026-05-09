@@ -295,6 +295,7 @@ describe('cron scheduler launcher resolution', () => {
     )
     expect(env.ANTHROPIC_API_KEY).toBe('proxy-managed')
     expect(env.ANTHROPIC_MODEL).toBe('provider-fast')
+    expect(env.ANTHROPIC_MODEL).not.toBe('stale-parent-model')
     expect(env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST).toBe('1')
     expect(env.CLAUDE_CODE_ENTRYPOINT).toBe('sdk-cli')
   })

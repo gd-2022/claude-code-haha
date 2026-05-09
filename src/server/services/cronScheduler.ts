@@ -662,6 +662,7 @@ export class CronScheduler {
     return {
       ...cleanEnv,
       CLAUDE_CODE_ENABLE_TASKS: '1',
+      CLAUDE_CODE_ENTRYPOINT: 'sdk-cli',
       CALLER_DIR: workDir,
       PWD: workDir,
       CC_HAHA_SKIP_DOTENV: '1',

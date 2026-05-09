@@ -5,6 +5,7 @@ import { useTranslation } from '../i18n'
 import { Modal } from '../components/shared/Modal'
 import { ConfirmDialog } from '../components/shared/ConfirmDialog'
 import { Input } from '../components/shared/Input'
+import { Textarea } from '../components/shared/Textarea'
 import { Button } from '../components/shared/Button'
 import { Dropdown } from '../components/shared/Dropdown'
 import type { PermissionMode, EffortLevel, ThemeMode, WebSearchMode } from '../types/settings'
@@ -44,6 +45,7 @@ import {
   restoreSettingsJsonSecrets,
   stripProviderSettingsJsonEnv,
 } from '../lib/providerSettingsJson'
+import { copyTextToClipboard } from '../components/chat/clipboard'
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('providers')
@@ -1355,16 +1357,36 @@ function GeneralSettings() {
     setDesktopNotificationsEnabled,
     webSearch,
     setWebSearch,
+    h5Access,
+    h5AccessGeneratedToken,
+    enableH5Access,
+    disableH5Access,
+    regenerateH5AccessToken,
+    updateH5AccessSettings,
+    clearH5AccessGeneratedToken,
   } = useSettingsStore()
   const t = useTranslation()
   const [webSearchDraft, setWebSearchDraft] = useState(webSearch)
+  const [h5PublicBaseUrlDraft, setH5PublicBaseUrlDraft] = useState(h5Access.publicBaseUrl ?? '')
+  const [h5AllowedOriginsDraft, setH5AllowedOriginsDraft] = useState(serializeAllowedOrigins(h5Access.allowedOrigins))
   const [notificationPermission, setNotificationPermission] = useState<DesktopNotificationPermission>('default')
   const [notificationActionRunning, setNotificationActionRunning] = useState(false)
+  const [h5ActionRunning, setH5ActionRunning] = useState(false)
+  const [h5Error, setH5Error] = useState<string | null>(null)
   const webSearchDirty = JSON.stringify(webSearchDraft) !== JSON.stringify(webSearch)
+  const h5AccessUrl = h5Access.enabled && h5Access.publicBaseUrl ? h5Access.publicBaseUrl : null
+  const h5AccessDirty =
+    h5PublicBaseUrlDraft.trim() !== (h5Access.publicBaseUrl ?? '') ||
+    !arraysEqual(parseAllowedOriginsDraft(h5AllowedOriginsDraft), h5Access.allowedOrigins)
 
   useEffect(() => {
     setWebSearchDraft(webSearch)
   }, [webSearch])
+
+  useEffect(() => {
+    setH5PublicBaseUrlDraft(h5Access.publicBaseUrl ?? '')
+    setH5AllowedOriginsDraft(serializeAllowedOrigins(h5Access.allowedOrigins))
+  }, [h5Access])
 
   useEffect(() => {
     let cancelled = false
@@ -1451,6 +1473,42 @@ function GeneralSettings() {
     } finally {
       setNotificationActionRunning(false)
     }
+  }
+
+  const runH5Action = async (action: () => Promise<void>) => {
+    setH5ActionRunning(true)
+    setH5Error(null)
+    try {
+      await action()
+    } catch (error) {
+      setH5Error(error instanceof Error ? error.message : t('settings.general.h5AccessError'))
+    } finally {
+      setH5ActionRunning(false)
+    }
+  }
+
+  const handleH5AccessToggle = async (enabled: boolean) => {
+    await runH5Action(async () => {
+      if (enabled) {
+        await enableH5Access()
+        return
+      }
+
+      await disableH5Access()
+    })
+  }
+
+  const handleH5SettingsSave = async () => {
+    await runH5Action(async () => {
+      await updateH5AccessSettings({
+        publicBaseUrl: h5PublicBaseUrlDraft.trim() || null,
+        allowedOrigins: parseAllowedOriginsDraft(h5AllowedOriginsDraft),
+      })
+    })
+  }
+
+  const handleH5Copy = async (value: string) => {
+    await copyTextToClipboard(value)
   }
 
   return (
@@ -1581,6 +1639,157 @@ function GeneralSettings() {
       </div>
 
       <div className="mt-8">
+        <section aria-labelledby="general-h5-access-title" role="region">
+          <h2
+            id="general-h5-access-title"
+            className="text-base font-semibold text-[var(--color-text-primary)] mb-1"
+          >
+            {t('settings.general.h5AccessTitle')}
+          </h2>
+          <p className="text-sm text-[var(--color-text-tertiary)] mb-3">
+            {t('settings.general.h5AccessDescription')}
+          </p>
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-container-low)] px-4 py-4">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                aria-label={t('settings.general.h5AccessEnabled')}
+                checked={h5Access.enabled}
+                onChange={(event) => void handleH5AccessToggle(event.target.checked)}
+                disabled={h5ActionRunning}
+                className="mt-0.5 h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-brand)] focus:ring-[var(--color-brand)]"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-[var(--color-text-primary)]">
+                  {t('settings.general.h5AccessEnabled')}
+                </div>
+                <div className="text-xs text-[var(--color-text-tertiary)] mt-1 leading-5">
+                  {t('settings.general.h5AccessEnabledHint')}
+                </div>
+              </div>
+            </label>
+
+            <div className="mt-4 border-t border-[var(--color-border)]/60 pt-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
+                    {t('settings.general.h5AccessTokenPreview')}
+                  </div>
+                  <div className="mt-1 text-sm font-medium text-[var(--color-text-primary)]">
+                    {h5Access.tokenPreview ?? t('settings.general.h5AccessDisabledValue')}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void runH5Action(regenerateH5AccessToken)}
+                  disabled={!h5Access.enabled || h5ActionRunning}
+                >
+                  {t('settings.general.h5AccessRegenerate')}
+                </Button>
+              </div>
+            </div>
+
+            {h5AccessGeneratedToken && (
+              <div className="mt-4 border-t border-[var(--color-border)]/60 pt-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-medium text-[var(--color-text-primary)]">
+                    {t('settings.general.h5AccessGeneratedToken')}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void handleH5Copy(h5AccessGeneratedToken)}
+                    >
+                      {t('settings.general.h5AccessCopy')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => clearH5AccessGeneratedToken()}
+                    >
+                      {t('settings.general.h5AccessHideToken')}
+                    </Button>
+                  </div>
+                </div>
+                <code className="mt-2 block rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs text-[var(--color-text-primary)] break-all">
+                  {h5AccessGeneratedToken}
+                </code>
+                <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">
+                  {t('settings.general.h5AccessGeneratedTokenHint')}
+                </p>
+              </div>
+            )}
+
+            <div className="mt-4 grid grid-cols-1 gap-3 border-t border-[var(--color-border)]/60 pt-4">
+              <Input
+                id="h5-access-public-url"
+                label={t('settings.general.h5AccessPublicUrl')}
+                value={h5PublicBaseUrlDraft}
+                placeholder={t('settings.general.h5AccessPublicUrlPlaceholder')}
+                onChange={(event) => setH5PublicBaseUrlDraft(event.target.value)}
+              />
+              <Textarea
+                id="h5-access-allowed-origins"
+                label={t('settings.general.h5AccessAllowedOrigins')}
+                value={h5AllowedOriginsDraft}
+                placeholder={t('settings.general.h5AccessAllowedOriginsPlaceholder')}
+                onChange={(event) => setH5AllowedOriginsDraft(event.target.value)}
+                className="min-h-[88px]"
+              />
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-[var(--color-text-tertiary)]">
+                  {t('settings.general.h5AccessOriginsHint')}
+                </p>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void handleH5SettingsSave()}
+                  disabled={!h5AccessDirty || h5ActionRunning}
+                  aria-label={t('settings.general.h5AccessSave')}
+                >
+                  {t('settings.general.h5AccessSave')}
+                </Button>
+              </div>
+            </div>
+
+            {h5AccessUrl && (
+              <div className="mt-4 border-t border-[var(--color-border)]/60 pt-4">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
+                      {t('settings.general.h5AccessUrl')}
+                    </div>
+                    <div className="mt-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] break-all">
+                      {h5AccessUrl}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="shrink-0"
+                    onClick={() => void handleH5Copy(h5AccessUrl)}
+                  >
+                    {t('settings.general.h5AccessCopy')}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <p className="mt-4 text-xs text-[var(--color-text-tertiary)] leading-5">
+              {t('settings.general.h5AccessSafetyNote')}
+            </p>
+            {h5Error && (
+              <p className="mt-2 text-xs text-[var(--color-error)]">
+                {h5Error}
+              </p>
+            )}
+          </div>
+        </section>
+      </div>
+
+      <div className="mt-8">
         <h2 className="text-base font-semibold text-[var(--color-text-primary)] mb-1">{t('settings.general.webFetchPreflightTitle')}</h2>
         <p className="text-sm text-[var(--color-text-tertiary)] mb-3">{t('settings.general.webFetchPreflightDescription')}</p>
         <label className="flex items-start gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-container-low)] px-4 py-3 cursor-pointer hover:border-[var(--color-border-focus)] transition-colors">
@@ -1696,6 +1905,21 @@ function GeneralSettings() {
       </div>
     </div>
   )
+}
+
+function serializeAllowedOrigins(origins: string[]) {
+  return origins.join(', ')
+}
+
+function parseAllowedOriginsDraft(value: string) {
+  return value
+    .split(/[\n,]/)
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+}
+
+function arraysEqual(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
 // ─── Agents Settings ──────────────────────────────────────

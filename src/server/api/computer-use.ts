@@ -18,6 +18,7 @@ import { detectPythonRuntime } from './computer-use-python.js'
 import {
   DEFAULT_DESKTOP_GRANT_FLAGS,
   loadStoredComputerUseConfig,
+  normalizePythonPath,
   saveStoredComputerUseConfig,
 } from '../../utils/computerUse/preauthorizedConfig.js'
 // Embed helper scripts at compile time so they're available in bundled mode
@@ -122,6 +123,8 @@ type EnvStatus = {
     installed: boolean
     version: string | null
     path: string | null
+    source: 'custom' | 'system' | 'venv' | null
+    error: string | null
   }
   venv: {
     created: boolean
@@ -146,8 +149,14 @@ async function checkStatus(): Promise<EnvStatus> {
     ? join(venvRoot, 'Scripts', 'python.exe')
     : join(venvRoot, 'bin', 'python3')
   const venvCreated = await pathExists(venvPython)
+  const config = await loadConfig()
 
-  const pythonRuntime = await detectPythonRuntime(platform, runCommand, venvCreated ? venvPython : undefined)
+  const pythonRuntime = await detectPythonRuntime(
+    platform,
+    runCommand,
+    venvCreated ? venvPython : undefined,
+    config.pythonPath,
+  )
 
   // Check dependencies — use the state dir copy
   const reqPath = getRequirementsPath()
@@ -193,6 +202,8 @@ async function checkStatus(): Promise<EnvStatus> {
       installed: pythonRuntime.installed,
       version: pythonRuntime.version,
       path: pythonRuntime.path,
+      source: pythonRuntime.source,
+      error: pythonRuntime.error,
     },
     venv: { created: venvCreated, path: venvRoot },
     dependencies: { installed: depsInstalled, requirementsFound: requirementsFound || true },
@@ -212,27 +223,33 @@ async function runSetup(): Promise<SetupResult> {
     ? join(venvRoot, 'Scripts', 'python.exe')
     : join(venvRoot, 'bin', 'python3')
   const venvExists = await pathExists(venvPython)
+  const config = await loadConfig()
 
   // Step 1: Check python
   const pythonRuntime = await detectPythonRuntime(
     process.platform,
     runCommand,
     venvExists ? venvPython : undefined,
+    config.pythonPath,
   )
   if (!pythonRuntime.installed) {
     steps.push({
       name: 'python_check',
       ok: false,
-      message: 'Python 3 未安装，请先安装 Python 3',
+      message: pythonRuntime.source === 'custom'
+        ? `自定义 Python 路径不可用: ${pythonRuntime.error ?? pythonRuntime.path}`
+        : 'Python 3 未安装，请先安装 Python 3',
     })
     return { success: false, steps }
   }
   steps.push({
     name: 'python_check',
     ok: true,
-    message: pythonRuntime.source === 'venv'
-      ? `Python ${pythonRuntime.version}（使用现有虚拟环境）`
-      : `Python ${pythonRuntime.version}`,
+    message: pythonRuntime.source === 'custom'
+      ? `Python ${pythonRuntime.version}（使用自定义解释器）`
+      : pythonRuntime.source === 'venv'
+        ? `Python ${pythonRuntime.version}（使用现有虚拟环境）`
+        : `Python ${pythonRuntime.version}`,
   })
 
   // Step 2: Extract runtime files to ~/.claude/.runtime/
@@ -356,6 +373,7 @@ type ComputerUseConfig = {
     clipboardWrite: boolean
     systemKeyCombos: boolean
   }
+  pythonPath: string | null
 }
 
 type RequestAccessBody = {
@@ -367,6 +385,7 @@ const DEFAULT_CONFIG: ComputerUseConfig = {
   enabled: true,
   authorizedApps: [],
   grantFlags: DEFAULT_DESKTOP_GRANT_FLAGS,
+  pythonPath: null,
 }
 
 async function loadConfig(): Promise<ComputerUseConfig> {
@@ -439,6 +458,7 @@ export async function handleComputerUseApi(
       if (body.enabled !== undefined) config.enabled = body.enabled
       if (body.authorizedApps) config.authorizedApps = body.authorizedApps
       if (body.grantFlags) config.grantFlags = { ...config.grantFlags, ...body.grantFlags }
+      if ('pythonPath' in body) config.pythonPath = normalizePythonPath(body.pythonPath)
       await saveConfig(config)
       return Response.json({ ok: true })
     } catch {

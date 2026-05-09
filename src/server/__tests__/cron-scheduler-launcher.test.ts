@@ -244,6 +244,7 @@ describe('cron scheduler launcher resolution', () => {
     process.env.CLAUDE_APP_ROOT = appRoot
     process.env.ANTHROPIC_BASE_URL = 'https://stale-parent.example'
     process.env.ANTHROPIC_MODEL = 'stale-parent-model'
+    process.env.CLAUDE_CODE_ENTRYPOINT = 'stale-parent-entrypoint'
 
     const provider = await new ProviderService().addProvider({
       presetId: 'custom',

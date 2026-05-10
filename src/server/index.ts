@@ -53,6 +53,49 @@ function isLocalServerHost(host: string): boolean {
   return host === '127.0.0.1' || host === 'localhost' || host === '::1'
 }
 
+function isLocalBrowserOrigin(origin: string | null): boolean {
+  if (!origin) return false
+
+  try {
+    return isLocalServerHost(new URL(origin).hostname)
+  } catch {
+    return false
+  }
+}
+
+function isPrivateNetworkHost(host: string): boolean {
+  const normalized = host.trim().replace(/^\[/, '').replace(/\]$/, '').toLowerCase()
+
+  if (normalized === '0.0.0.0') {
+    return true
+  }
+
+  const parts = normalized.split('.')
+  if (parts.length === 4 && parts.every((part) => /^\d+$/.test(part))) {
+    const octets = parts.map((part) => Number(part))
+    if (octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
+      return false
+    }
+    const a = octets[0] ?? -1
+    const b = octets[1] ?? -1
+    return (
+      a === 10 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254)
+    )
+  }
+
+  return normalized.startsWith('fc') ||
+    normalized.startsWith('fd') ||
+    normalized.startsWith('fe80:')
+}
+
+export function canBypassRemoteAuthForLocalBrowser(origin: string | null, requestHost: string): boolean {
+  return isLocalBrowserOrigin(origin) &&
+    (isLocalServerHost(requestHost) || isPrivateNetworkHost(requestHost))
+}
+
 function withCors(response: Response, cors: CorsResolution): Response {
   const headers = new Headers(response.headers)
   for (const [key, value] of Object.entries(cors.headers)) {
@@ -87,10 +130,10 @@ export function startServer(port = PORT, host = HOST) {
    * - Production / non-localhost (e.g. 0.0.0.0): auth enforced automatically.
    * - Explicit opt-in: SERVER_AUTH_REQUIRED=1 forces auth even on localhost.
    */
-  const authRequired =
+  const forceAuth =
     SERVER_OPTIONS.authRequired ||
-    process.env.SERVER_AUTH_REQUIRED === '1' ||
-    !isLocalServerHost(host)
+    process.env.SERVER_AUTH_REQUIRED === '1'
+  const remoteHostAuthRequired = !isLocalServerHost(host)
 
   const server = Bun.serve<WebSocketData>({
     port,
@@ -102,6 +145,10 @@ export function startServer(port = PORT, host = HOST) {
       const url = new URL(req.url)
       const origin = req.headers.get('Origin')
       const cors = await resolveCors(origin)
+      const authRequired = forceAuth || (
+        remoteHostAuthRequired &&
+        !canBypassRemoteAuthForLocalBrowser(origin, url.hostname)
+      )
 
       // Handle CORS preflight
       if (req.method === 'OPTIONS') {

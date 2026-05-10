@@ -15,6 +15,8 @@ import { AttachmentGallery } from '../components/chat/AttachmentGallery'
 import { ContextUsageIndicator } from '../components/chat/ContextUsageIndicator'
 import { FileSearchMenu, type FileSearchMenuHandle } from '../components/chat/FileSearchMenu'
 import { LocalSlashCommandPanel, type LocalSlashCommandName } from '../components/chat/LocalSlashCommandPanel'
+import { useMobileViewport } from '../hooks/useMobileViewport'
+import { isTauriRuntime } from '../lib/desktopRuntime'
 import {
   FALLBACK_SLASH_COMMANDS,
   findSlashToken,
@@ -109,6 +111,7 @@ export function EmptySession() {
     ? `${draftRuntimeSelection.providerId ?? 'official'}:${draftRuntimeSelection.modelId}`
     : undefined
   const draftModelLabel = draftRuntimeSelection?.modelId ?? currentModel?.name ?? currentModel?.id
+  const isMobileComposer = useMobileViewport() && !isTauriRuntime()
 
   useEffect(() => {
     textareaRef.current?.focus()
@@ -508,22 +511,46 @@ export function EmptySession() {
 
   return (
     <div className="relative flex flex-1 flex-col overflow-hidden bg-[var(--color-surface)]">
-      <div className="flex flex-1 flex-col items-center justify-center p-8 pb-32">
-        <div className="flex max-w-md flex-col items-center text-center">
-          <img src="/app-icon.png" alt="Claude Code Haha" className="mb-6 h-24 w-24" />
-          <h1 className="mb-2 text-3xl font-extrabold tracking-tight text-[var(--color-text-primary)]" style={{ fontFamily: 'var(--font-headline)' }}>
+      <div className={`flex flex-1 flex-col items-center justify-center ${
+        isMobileComposer ? 'px-6 pb-[230px] pt-10' : 'p-8 pb-32'
+      }`}>
+        <div className={`flex flex-col items-center text-center ${
+          isMobileComposer ? 'max-w-[300px]' : 'max-w-md'
+        }`}>
+          <img
+            src="/app-icon.png"
+            alt="Claude Code Haha"
+            className={isMobileComposer ? 'mb-4 h-16 w-16' : 'mb-6 h-24 w-24'}
+          />
+          <h1
+            className={`mb-2 font-extrabold tracking-tight text-[var(--color-text-primary)] ${
+              isMobileComposer ? 'text-2xl' : 'text-3xl'
+            }`}
+            style={{ fontFamily: 'var(--font-headline)' }}
+          >
             {t('empty.title')}
           </h1>
-          <p className="mx-auto max-w-xs text-[var(--color-text-secondary)]" style={{ fontFamily: 'var(--font-body)' }}>
+          <p
+            className={`mx-auto text-[var(--color-text-secondary)] ${
+              isMobileComposer ? 'max-w-[280px] text-sm leading-6' : 'max-w-xs'
+            }`}
+            style={{ fontFamily: 'var(--font-body)' }}
+          >
             {t('empty.subtitle')}
           </p>
         </div>
       </div>
 
-      <div className="absolute bottom-4 left-0 right-0 flex justify-center px-8">
-        <div className="flex w-full max-w-3xl flex-col">
+      <div className={`absolute left-0 right-0 z-30 flex justify-center ${
+        isMobileComposer
+          ? 'bottom-0 px-0 pb-0'
+          : 'bottom-4 px-8'
+      }`}>
+        <div className={`flex w-full flex-col ${isMobileComposer ? 'max-w-none' : 'max-w-3xl'}`}>
           <div
-            className="glass-panel relative flex flex-col gap-3 rounded-t-xl rounded-b-none p-4"
+            className={`glass-panel relative flex flex-col gap-3 ${
+              isMobileComposer ? 'rounded-t-2xl rounded-b-none p-3 shadow-[0_-12px_36px_rgba(54,35,28,0.12)]' : 'rounded-t-xl rounded-b-none p-4'
+            }`}
             onDragOver={(event) => event.preventDefault()}
             onDrop={handleDrop}
           >
@@ -622,26 +649,34 @@ export function EmptySession() {
                 onChange={(event) => handleInputChange(event.target.value, event.target.selectionStart ?? event.target.value.length)}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
-                className="flex-1 resize-none border-none bg-transparent py-2 leading-relaxed text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
+                className={`flex-1 resize-none border-none bg-transparent leading-relaxed text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)] ${
+                  isMobileComposer ? 'max-h-[132px] min-h-[72px] py-1.5 text-base' : 'py-2'
+                }`}
                 style={{ fontFamily: 'var(--font-body)' }}
                 placeholder={t('empty.placeholder')}
                 rows={2}
               />
             </div>
 
-            <div className="flex items-center justify-between border-t border-[var(--color-border-separator)] pt-3">
-              <div className="flex items-center gap-2">
+            <div className={`border-t border-[var(--color-border-separator)] pt-3 ${
+              isMobileComposer ? 'flex flex-wrap items-center gap-2' : 'flex items-center justify-between'
+            }`}>
+              <div className="flex shrink-0 items-center gap-2">
                 <div ref={plusMenuRef} className="relative">
                   <button
                     onClick={() => setPlusMenuOpen((prev) => !prev)}
                     aria-label="Open composer tools"
-                    className="rounded-lg p-1.5 text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)]"
+                    className={`text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] ${
+                      isMobileComposer ? 'inline-flex h-11 w-11 items-center justify-center rounded-xl' : 'rounded-lg p-1.5'
+                    }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">add</span>
                   </button>
 
                   {plusMenuOpen && (
-                    <div className="absolute bottom-full left-0 mb-2 w-[240px] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] py-1 shadow-[var(--shadow-dropdown)]">
+                    <div className={`absolute bottom-full left-0 mb-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] py-1 shadow-[var(--shadow-dropdown)] ${
+                      isMobileComposer ? 'w-[min(240px,calc(100vw-32px))]' : 'w-[240px]'
+                    }`}>
                       <button
                         onClick={() => {
                           fileInputRef.current?.click()
@@ -663,24 +698,29 @@ export function EmptySession() {
                   )}
                 </div>
 
-                <PermissionModeSelector workDir={workDir} />
+                <PermissionModeSelector workDir={workDir} compact={isMobileComposer} />
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className={`${isMobileComposer ? 'flex min-w-0 flex-1 items-center justify-end gap-2' : 'flex items-center gap-3'}`}>
                 <ContextUsageIndicator
                   chatState="idle"
                   messageCount={0}
                   runtimeSelectionKey={draftRuntimeSelectionKey}
                   fallbackModelLabel={draftModelLabel}
                   draft
+                  compact={isMobileComposer}
                 />
-                <ModelSelector runtimeKey={DRAFT_RUNTIME_SELECTION_KEY} disabled={isSubmitting} />
+                <ModelSelector runtimeKey={DRAFT_RUNTIME_SELECTION_KEY} disabled={isSubmitting} compact={isMobileComposer} />
                 <button
                   onClick={handleSubmit}
                   disabled={!canSubmit}
-                  className="flex w-[112px] items-center justify-center gap-1 rounded-lg bg-[image:var(--gradient-btn-primary)] px-3 py-1.5 text-xs font-semibold text-[var(--color-btn-primary-fg)] shadow-[var(--shadow-button-primary)] transition-all hover:brightness-105 disabled:opacity-30"
+                  aria-label={t('common.run')}
+                  title={isMobileComposer ? t('common.run') : undefined}
+                  className={`flex shrink-0 items-center justify-center gap-1 rounded-lg bg-[image:var(--gradient-btn-primary)] text-xs font-semibold text-[var(--color-btn-primary-fg)] shadow-[var(--shadow-button-primary)] transition-all hover:brightness-105 disabled:opacity-30 ${
+                    isMobileComposer ? 'h-11 w-11 rounded-xl px-0 py-0' : 'w-[112px] px-3 py-1.5'
+                  }`}
                 >
-                  {t('common.run')}
+                  {!isMobileComposer && t('common.run')}
                   <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
                 </button>
               </div>

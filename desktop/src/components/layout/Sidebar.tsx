@@ -218,19 +218,21 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
         >
           {t('sidebar.newSession')}
         </NavItem>
-        <NavItem
-          active={activeTabId === SCHEDULED_TAB_ID}
-          collapsed={!expanded}
-          label={t('sidebar.scheduled')}
-          touchFriendly={isMobile}
-          onClick={() => {
-            useTabStore.getState().openTab(SCHEDULED_TAB_ID, t('sidebar.scheduled'), 'scheduled')
-            closeMobileDrawer()
-          }}
-          icon={<ClockIcon />}
-        >
-          {t('sidebar.scheduled')}
-        </NavItem>
+        {!isMobile && (
+          <NavItem
+            active={activeTabId === SCHEDULED_TAB_ID}
+            collapsed={!expanded}
+            label={t('sidebar.scheduled')}
+            touchFriendly={isMobile}
+            onClick={() => {
+              useTabStore.getState().openTab(SCHEDULED_TAB_ID, t('sidebar.scheduled'), 'scheduled')
+              closeMobileDrawer()
+            }}
+            icon={<ClockIcon />}
+          >
+            {t('sidebar.scheduled')}
+          </NavItem>
+        )}
       </div>
 
       {expanded ? (
@@ -359,21 +361,23 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
         <div className="flex-1" aria-hidden="true" />
       )}
 
-      <div className={`border-t border-[var(--color-border)] p-3 ${expanded ? '' : 'flex justify-center'}`}>
-        <NavItem
-          active={activeTabId === SETTINGS_TAB_ID}
-          collapsed={!expanded}
-          label={t('sidebar.settings')}
-          touchFriendly={isMobile}
-          onClick={() => {
-            useTabStore.getState().openTab(SETTINGS_TAB_ID, t('sidebar.settings'), 'settings')
-            closeMobileDrawer()
-          }}
-          icon={<span className="material-symbols-outlined text-[18px]">settings</span>}
-        >
-          {t('sidebar.settings')}
-        </NavItem>
-      </div>
+      {!isMobile && (
+        <div className={`border-t border-[var(--color-border)] p-3 ${expanded ? '' : 'flex justify-center'}`}>
+          <NavItem
+            active={activeTabId === SETTINGS_TAB_ID}
+            collapsed={!expanded}
+            label={t('sidebar.settings')}
+            touchFriendly={isMobile}
+            onClick={() => {
+              useTabStore.getState().openTab(SETTINGS_TAB_ID, t('sidebar.settings'), 'settings')
+              closeMobileDrawer()
+            }}
+            icon={<span className="material-symbols-outlined text-[18px]">settings</span>}
+          >
+            {t('sidebar.settings')}
+          </NavItem>
+        </div>
+      )}
 
       {contextMenu && sidebarOpen && (
         <div

@@ -19,6 +19,11 @@ import { useChatStore } from '../../stores/chatStore'
 import { useTranslation } from '../../i18n'
 import { H5ConnectionView } from './H5ConnectionView'
 import { useMobileViewport } from '../../hooks/useMobileViewport'
+import type { Tab } from '../../stores/tabStore'
+
+function isChatTab(tab: Tab | undefined) {
+  return tab?.type === 'session'
+}
 
 export function AppShell() {
   const fetchSettings = useSettingsStore((s) => s.fetchAll)
@@ -33,6 +38,9 @@ export function AppShell() {
   const t = useTranslation()
   const tauriRuntime = isTauriRuntime()
   const isMobileShell = useMobileViewport() && !tauriRuntime
+  const tabs = useTabStore((s) => s.tabs)
+  const activeTabId = useTabStore((s) => s.activeTabId)
+  const setActiveTab = useTabStore((s) => s.setActiveTab)
   const wasMobileShellRef = useRef(false)
   const effectiveSidebarOpen = isMobileShell ? mobileSidebarOpen : sidebarOpen
   const sidebarHiddenProps: HTMLAttributes<HTMLDivElement> & { inert?: '' } =
@@ -120,6 +128,18 @@ export function AppShell() {
     wasMobileShellRef.current = isMobileShell
   }, [isMobileShell, setSidebarOpen])
 
+  useEffect(() => {
+    if (!ready || !isMobileShell) return
+    const activeTab = tabs.find((tab) => tab.sessionId === activeTabId)
+    if (isChatTab(activeTab) || (!activeTab && !activeTabId)) return
+    const nextChatTab = tabs.find(isChatTab)
+    if (nextChatTab) {
+      setActiveTab(nextChatTab.sessionId)
+      return
+    }
+    useTabStore.setState({ activeTabId: null })
+  }, [activeTabId, isMobileShell, ready, setActiveTab, tabs])
+
   const setEffectiveSidebarOpen = (open: boolean) => {
     if (isMobileShell) {
       setMobileSidebarOpen(open)
@@ -204,7 +224,7 @@ export function AppShell() {
             </button>
           </div>
         ) : null}
-        <TabBar />
+        {!isMobileShell ? <TabBar /> : null}
         <ContentRouter />
       </main>
       <ToastContainer />

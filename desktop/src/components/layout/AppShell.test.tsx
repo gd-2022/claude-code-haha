@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   fetchAll: vi.fn(),
   restoreTabs: vi.fn(),
   connectToSession: vi.fn(),
+  setActiveTab: vi.fn(),
   tabState: {
     activeTabId: null as string | null,
     tabs: [] as Array<{ sessionId: string; title: string; type: string; status: string }>,
@@ -32,17 +33,31 @@ vi.mock('../../hooks/useMobileViewport', () => ({
   useMobileViewport: () => mocks.isMobile,
 }))
 
-vi.mock('../../stores/tabStore', () => ({
-  SETTINGS_TAB_ID: '__settings__',
-  useTabStore: {
-    getState: () => ({
-      restoreTabs: mocks.restoreTabs,
-      activeTabId: mocks.tabState.activeTabId,
-      tabs: mocks.tabState.tabs,
-      openTab: vi.fn(),
-    }),
-  },
-}))
+vi.mock('../../stores/tabStore', () => {
+  const useTabStore = (selector: (state: {
+    tabs: typeof mocks.tabState.tabs
+    activeTabId: string | null
+    setActiveTab: typeof mocks.setActiveTab
+  }) => unknown) => selector({
+    tabs: mocks.tabState.tabs,
+    activeTabId: mocks.tabState.activeTabId,
+    setActiveTab: mocks.setActiveTab,
+  })
+  useTabStore.getState = () => ({
+    restoreTabs: mocks.restoreTabs,
+    activeTabId: mocks.tabState.activeTabId,
+    tabs: mocks.tabState.tabs,
+    openTab: vi.fn(),
+    setActiveTab: mocks.setActiveTab,
+  })
+  useTabStore.setState = (next: { activeTabId?: string | null }) => {
+    if ('activeTabId' in next) mocks.tabState.activeTabId = next.activeTabId ?? null
+  }
+  return {
+    SETTINGS_TAB_ID: '__settings__',
+    useTabStore,
+  }
+})
 
 vi.mock('../../stores/chatStore', () => ({
   useChatStore: {
@@ -100,6 +115,9 @@ describe('AppShell boot flow', () => {
     mocks.initializeDesktopServerUrl.mockResolvedValue('http://127.0.0.1:3456')
     mocks.fetchAll.mockResolvedValue(undefined)
     mocks.restoreTabs.mockResolvedValue(undefined)
+    mocks.setActiveTab.mockImplementation((sessionId: string) => {
+      mocks.tabState.activeTabId = sessionId
+    })
     mocks.tabState.activeTabId = null
     mocks.tabState.tabs = []
     useUIStore.setState({ sidebarOpen: true })
@@ -251,5 +269,22 @@ describe('AppShell boot flow', () => {
 
     expect(useUIStore.getState().sidebarOpen).toBe(false)
     expect(screen.getByTestId('sidebar-shell')).toHaveAttribute('data-state', 'closed')
+  })
+
+  it('keeps browser H5 mobile on chat tabs when settings was restored as active', async () => {
+    mocks.isMobile = true
+    mocks.tabState.activeTabId = '__settings__'
+    mocks.tabState.tabs = [
+      { sessionId: '__settings__', title: 'Settings', type: 'settings', status: 'idle' },
+      { sessionId: 'session-1', title: 'Existing session', type: 'session', status: 'idle' },
+    ]
+
+    render(<AppShell />)
+
+    await screen.findByText('content loaded')
+    expect(screen.queryByText('tabs loaded')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(mocks.setActiveTab).toHaveBeenCalledWith('session-1')
+    })
   })
 })

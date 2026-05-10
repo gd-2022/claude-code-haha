@@ -23,6 +23,7 @@ import {
   initializeDesktopServerUrl,
   isLoopbackHostname,
   requiresH5AuthForServerUrl,
+  saveAndVerifyH5Connection,
 } from './desktopRuntime'
 
 describe('desktopRuntime browser H5 bootstrap', () => {
@@ -48,11 +49,18 @@ describe('desktopRuntime browser H5 bootstrap', () => {
     expect(requiresH5AuthForServerUrl('http://127.0.0.1:3456')).toBe(false)
     expect(requiresH5AuthForServerUrl('http://localhost:3456')).toBe(false)
     expect(requiresH5AuthForServerUrl('https://public.example.com/app')).toBe(true)
+    expect(requiresH5AuthForServerUrl('https://public.example.com/app', 'phone.example.test')).toBe(true)
+  })
+
+  it('only lets localhost browser WebUI bypass H5 auth for private LAN servers', () => {
+    expect(requiresH5AuthForServerUrl('http://192.168.0.102:28670', '127.0.0.1')).toBe(false)
+    expect(requiresH5AuthForServerUrl('http://10.0.0.5:28670', 'localhost')).toBe(false)
+    expect(requiresH5AuthForServerUrl('http://172.20.1.8:28670', 'localhost')).toBe(false)
+    expect(requiresH5AuthForServerUrl('https://public.example.com/app', 'localhost')).toBe(true)
+    expect(requiresH5AuthForServerUrl('http://192.168.0.102:28670', 'phone.example.test')).toBe(true)
   })
 
   it('clears an invalid token but preserves the remembered remote server URL', async () => {
-    window.history.pushState({}, '', '/?serverUrl=https%3A%2F%2Fpublic.example.com%2Fapp')
-    window.localStorage.setItem(H5_TOKEN_STORAGE_KEY, 'stale-token')
     globalThis.fetch = vi.fn().mockResolvedValue(
       new Response(null, { status: 200 }),
     ) as typeof fetch
@@ -60,7 +68,7 @@ describe('desktopRuntime browser H5 bootstrap', () => {
       Object.assign(new Error('Invalid or missing H5 access token'), { status: 401 }),
     )
 
-    await expect(initializeDesktopServerUrl()).rejects.toMatchObject({
+    await expect(saveAndVerifyH5Connection('https://public.example.com/app', 'stale-token')).rejects.toMatchObject({
       name: 'H5ConnectionRequiredError',
       serverUrl: 'https://public.example.com/app',
       message: 'The saved H5 token is no longer valid.',
@@ -88,10 +96,9 @@ describe('desktopRuntime browser H5 bootstrap', () => {
 
   it('normalizes unreachable remote browser startup into a recoverable H5 error', async () => {
     vi.useFakeTimers()
-    window.history.pushState({}, '', '/?serverUrl=https%3A%2F%2Funreachable.example.com')
     globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) as typeof fetch
 
-    const startup = expect(initializeDesktopServerUrl()).rejects.toMatchObject({
+    const startup = expect(saveAndVerifyH5Connection('https://unreachable.example.com', 'h5_token')).rejects.toMatchObject({
       name: 'H5ConnectionRequiredError',
       serverUrl: 'https://unreachable.example.com',
       message: 'Unable to reach https://unreachable.example.com. Check the server URL or network access.',
@@ -106,14 +113,12 @@ describe('desktopRuntime browser H5 bootstrap', () => {
   })
 
   it('normalizes remote verify failures like disabled H5 or CORS into recoverable H5 errors', async () => {
-    window.history.pushState({}, '', '/?serverUrl=https%3A%2F%2Fpublic.example.com')
-    window.localStorage.setItem(H5_TOKEN_STORAGE_KEY, 'h5_token')
     globalThis.fetch = vi.fn().mockResolvedValue(
       new Response(null, { status: 200 }),
     ) as typeof fetch
     clientMocks.postVerify.mockRejectedValueOnce(new TypeError('Failed to fetch'))
 
-    await expect(initializeDesktopServerUrl()).rejects.toMatchObject({
+    await expect(saveAndVerifyH5Connection('https://public.example.com', 'h5_token')).rejects.toMatchObject({
       name: 'H5ConnectionRequiredError',
       serverUrl: 'https://public.example.com',
       message: 'Unable to verify the H5 access token.',
@@ -123,5 +128,35 @@ describe('desktopRuntime browser H5 bootstrap', () => {
       'https://public.example.com',
     )
     expect(window.localStorage.getItem(H5_TOKEN_STORAGE_KEY)).toBeNull()
+  })
+
+  it('lets localhost browser WebUI connect to a LAN-bound server without H5 token', async () => {
+    window.history.pushState({}, '', '/?serverUrl=http%3A%2F%2F192.168.0.102%3A28670')
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(null, { status: 200 }),
+    ) as typeof fetch
+
+    await expect(initializeDesktopServerUrl()).resolves.toBe('http://192.168.0.102:28670')
+
+    expect(clientMocks.setBaseUrl).toHaveBeenLastCalledWith('http://192.168.0.102:28670')
+    expect(clientMocks.setAuthToken).toHaveBeenLastCalledWith(null)
+    expect(clientMocks.postVerify).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem(H5_SERVER_URL_STORAGE_KEY)).toBeNull()
+    expect(globalThis.fetch).toHaveBeenCalledWith('http://192.168.0.102:28670/api/status', {
+      cache: 'no-store',
+    })
+  })
+
+  it('shows the H5 token recovery view when a local browser connects to an auth-required LAN server', async () => {
+    window.history.pushState({}, '', '/?serverUrl=http%3A%2F%2F192.168.0.102%3A28670')
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 401 })) as typeof fetch
+
+    await expect(initializeDesktopServerUrl()).rejects.toMatchObject({
+      name: 'H5ConnectionRequiredError',
+      serverUrl: 'http://192.168.0.102:28670',
+      reason: 'missing-token',
+    } satisfies Partial<H5ConnectionRequiredError>)
   })
 })

@@ -725,25 +725,25 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
         isHeroComposer
           ? `bg-[var(--color-surface)] ${isMobileComposer ? 'px-4 pb-3' : 'px-8 pb-4'}`
           : compact
-            ? 'border-t border-[var(--color-border)]/70 bg-[var(--color-surface)] px-3 py-3'
-            : `bg-[var(--color-surface)] ${isMobileComposer ? 'px-3 py-3' : 'px-4 py-4'}`
+            ? `border-t border-[var(--color-border)]/70 bg-[var(--color-surface)] ${isMobileComposer ? 'px-0 pb-0 pt-2' : 'px-3 py-3'}`
+            : `bg-[var(--color-surface)] ${isMobileComposer ? 'px-0 pb-0 pt-2' : 'px-4 py-4'}`
       }
     >
       <div
         className={
           isHeroComposer
             ? 'mx-auto flex w-full max-w-3xl flex-col'
-            : compact
+          : compact
               ? 'mx-auto max-w-full'
-              : 'mx-auto max-w-[860px]'
+              : `${isMobileComposer ? 'mx-0 max-w-none' : 'mx-auto max-w-[860px]'}`
         }
       >
         <div
           className={isHeroComposer
             ? 'glass-panel relative flex flex-col gap-3 rounded-t-xl rounded-b-none p-4 transition-colors'
             : compact
-              ? 'glass-panel relative rounded-xl p-3 transition-colors'
-              : 'glass-panel relative rounded-xl p-4 transition-colors'}
+              ? `glass-panel relative p-3 transition-colors ${isMobileComposer ? 'rounded-t-2xl rounded-b-none shadow-[0_-12px_36px_rgba(54,35,28,0.12)]' : 'rounded-xl'}`
+              : `glass-panel relative transition-colors ${isMobileComposer ? 'rounded-t-2xl rounded-b-none p-3 shadow-[0_-12px_36px_rgba(54,35,28,0.12)]' : 'rounded-xl p-4'}`}
           onDragOver={(event) => event.preventDefault()}
           onDrop={handleDrop}
         >
@@ -964,7 +964,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
                         : t('common.run')
                       : undefined
                 }
-                className={`flex items-center justify-center gap-1 rounded-lg text-xs font-semibold transition-all hover:brightness-105 disabled:opacity-30 ${
+                className={`flex shrink-0 items-center justify-center gap-1 rounded-lg text-xs font-semibold transition-all hover:brightness-105 disabled:opacity-30 ${
                   iconOnlyAction ? `${isMobileComposer ? 'h-11 w-11 rounded-xl px-0 py-0' : 'h-8 w-8 px-0 py-0'}` : 'w-[112px] px-3 py-1.5'
                 } ${
                   !isMemberSession && isActive

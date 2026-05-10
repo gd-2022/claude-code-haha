@@ -9,6 +9,7 @@ import { useTranslation } from '../../i18n'
 import type { PermissionMode } from '../../types/settings'
 import { useMobileViewport } from '../../hooks/useMobileViewport'
 import { isTauriRuntime } from '../../lib/desktopRuntime'
+import { MobileBottomSheet } from '../shared/MobileBottomSheet'
 
 const MODE_ICONS: Record<PermissionMode, string> = {
   default: 'verified_user',
@@ -118,11 +119,8 @@ export function PermissionModeSelector({ workDir: workDirProp, compact = false, 
     }
   }, [open])
 
-  const menuContent = (
-    <>
-      <div className="px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--color-outline)]">
-        {t('permMode.executionPermissions')}
-      </div>
+  const permissionOptions = (
+    <div id={menuId} ref={menuRef} role="menu">
       {PERMISSION_ITEMS.map((item) => (
         <button
           key={item.value}
@@ -142,25 +140,34 @@ export function PermissionModeSelector({ workDir: workDirProp, compact = false, 
             setOpen(false)
           }}
           className={`
-            w-full flex items-start gap-3 px-4 py-3 text-left transition-colors
+            flex w-full items-start gap-3 px-4 py-3 text-left transition-colors
             hover:bg-[var(--color-surface-hover)]
             ${item.value === currentMode ? 'bg-[var(--color-surface-selected)]' : ''}
           `}
         >
-          <span className={`material-symbols-outlined text-[20px] mt-0.5 ${item.color || 'text-[var(--color-text-secondary)]'}`}>
+          <span className={`material-symbols-outlined mt-0.5 text-[20px] ${item.color || 'text-[var(--color-text-secondary)]'}`}>
             {item.icon}
           </span>
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="text-sm font-semibold text-[var(--color-text-primary)]">{item.label}</div>
-            <div className="text-xs text-[var(--color-text-tertiary)] mt-0.5">{item.description}</div>
+            <div className="mt-0.5 text-xs text-[var(--color-text-tertiary)]">{item.description}</div>
           </div>
           {item.value === currentMode && (
-            <span className="material-symbols-outlined text-[16px] text-[var(--color-brand)] mt-0.5" style={{ fontVariationSettings: "'FILL' 1" }}>
+            <span className="material-symbols-outlined mt-0.5 text-[16px] text-[var(--color-brand)]" style={{ fontVariationSettings: "'FILL' 1" }}>
               check_circle
             </span>
           )}
         </button>
       ))}
+    </div>
+  )
+
+  const menuContent = (
+    <>
+      <div className="px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--color-outline)]">
+        {t('permMode.executionPermissions')}
+      </div>
+      {permissionOptions}
     </>
   )
 
@@ -187,19 +194,17 @@ export function PermissionModeSelector({ workDir: workDirProp, compact = false, 
       </button>
 
       {open && (
-        isMobile ? createPortal(
-          <div className="fixed inset-0 z-50 bg-black/20" onClick={() => setOpen(false)}>
-            <div
-              id={menuId}
-              ref={menuRef}
-              role="menu"
-              className="absolute inset-x-4 bottom-4 max-h-[min(70vh,520px)] overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] py-2 shadow-[var(--shadow-dropdown)]"
-              onClick={(event) => event.stopPropagation()}
-            >
-              {menuContent}
-            </div>
-          </div>,
-          document.body,
+        isMobile ? (
+          <MobileBottomSheet
+            open={open}
+            onClose={() => setOpen(false)}
+            title={t('permMode.executionPermissions')}
+            closeLabel={t('tabs.close')}
+            ariaLabel={t('permMode.executionPermissions')}
+            contentClassName="py-2"
+          >
+            {permissionOptions}
+          </MobileBottomSheet>
         ) : (
           <div id={menuId} ref={menuRef} role="menu" className="absolute left-0 bottom-full mb-2 w-[320px] rounded-xl bg-[var(--color-surface-container-lowest)] border border-[var(--color-border)] shadow-[var(--shadow-dropdown)] z-50 py-2">
             {menuContent}

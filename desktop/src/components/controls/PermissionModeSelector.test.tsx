@@ -38,6 +38,7 @@ vi.mock('../../i18n', () => ({
     'permMode.permPackages': 'Install packages',
     'permMode.enableBypassBtn': 'Enable bypass',
     'common.cancel': 'Cancel',
+    'tabs.close': 'Close',
   }[key] ?? key),
 }))
 
@@ -68,7 +69,8 @@ describe('PermissionModeSelector mobile access', () => {
 
     expect(trigger).toHaveAttribute('aria-expanded', 'true')
     expect(trigger).toHaveAttribute('aria-controls', 'permission-mode-menu')
-    expect(screen.getByRole('menu')).toHaveClass('inset-x-4', 'bottom-4')
+    expect(screen.getByRole('dialog', { name: 'Execution Permissions' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: /Auto accept edits/ })).toBeInTheDocument()
   })
 })

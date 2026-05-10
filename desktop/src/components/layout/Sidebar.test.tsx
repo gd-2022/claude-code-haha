@@ -204,7 +204,7 @@ describe('Sidebar', () => {
     expect(screen.getByTestId('sidebar-session-list-section')).toHaveClass('flex', 'flex-1', 'min-h-0', 'flex-col')
   })
 
-  it('closes the mobile drawer after navigation actions', async () => {
+  it('keeps mobile navigation focused on chat sessions', async () => {
     const onRequestClose = vi.fn()
     createSession.mockResolvedValue('session-mobile-new')
     useSessionStore.setState({
@@ -224,11 +224,11 @@ describe('Sidebar', () => {
 
     render(<Sidebar isMobile onRequestClose={onRequestClose} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Scheduled' }))
-    expect(onRequestClose).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'Scheduled' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Settings' })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Open Session/ }))
-    expect(onRequestClose).toHaveBeenCalledTimes(2)
+    expect(onRequestClose).toHaveBeenCalledTimes(1)
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'New Session' }))
@@ -237,7 +237,7 @@ describe('Sidebar', () => {
     await waitFor(() => {
       expect(createSession).toHaveBeenCalled()
     })
-    expect(onRequestClose).toHaveBeenCalledTimes(3)
+    expect(onRequestClose).toHaveBeenCalledTimes(2)
   })
 
   it('shows a loading state instead of an empty session list while initial fetch is pending', () => {

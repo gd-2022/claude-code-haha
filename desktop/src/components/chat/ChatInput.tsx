@@ -29,6 +29,8 @@ import {
   replaceSlashToken,
   resolveSlashUiAction,
 } from './composerUtils'
+import { useMobileViewport } from '../../hooks/useMobileViewport'
+import { isTauriRuntime } from '../../lib/desktopRuntime'
 
 type GitInfo = SessionGitInfo
 
@@ -68,6 +70,7 @@ function workspaceReferenceToAttachment(reference: WorkspaceChatReference): Atta
 
 export function ChatInput({ variant = 'default', compact = false }: ChatInputProps) {
   const t = useTranslation()
+  const isMobileComposer = useMobileViewport() && !isTauriRuntime()
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [plusMenuOpen, setPlusMenuOpen] = useState(false)
@@ -123,6 +126,8 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
   const isHeroComposer = variant === 'hero' && !isMemberSession && !compact
   const resolvedWorkDir = activeSession?.workDir || gitInfo?.workDir || undefined
   const showLaunchControls = !isMemberSession && messageCount === 0
+  const useCompactControls = compact || isMobileComposer
+  const iconOnlyAction = compact || isMobileComposer
   const activeLaunchWorkDir = showLaunchControls ? (launchWorkDir || resolvedWorkDir || '') : (resolvedWorkDir || '')
   const pendingSlashUiAction = !isMemberSession && input.trim().startsWith('/')
     ? resolveSlashUiAction(input.trim().slice(1))
@@ -718,27 +723,27 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
     <div
       className={
         isHeroComposer
-          ? 'bg-[var(--color-surface)] px-8 pb-4'
+          ? `bg-[var(--color-surface)] ${isMobileComposer ? 'px-4 pb-3' : 'px-8 pb-4'}`
           : compact
-            ? 'border-t border-[var(--color-border)]/70 bg-[var(--color-surface)] px-3 py-3'
-            : 'bg-[var(--color-surface)] px-4 py-4'
+            ? `border-t border-[var(--color-border)]/70 bg-[var(--color-surface)] ${isMobileComposer ? 'px-0 pb-0 pt-2' : 'px-3 py-3'}`
+            : `bg-[var(--color-surface)] ${isMobileComposer ? 'px-0 pb-0 pt-2' : 'px-4 py-4'}`
       }
     >
       <div
         className={
           isHeroComposer
             ? 'mx-auto flex w-full max-w-3xl flex-col'
-            : compact
+          : compact
               ? 'mx-auto max-w-full'
-              : 'mx-auto max-w-[860px]'
+              : `${isMobileComposer ? 'mx-0 max-w-none' : 'mx-auto max-w-[860px]'}`
         }
       >
         <div
           className={isHeroComposer
             ? 'glass-panel relative flex flex-col gap-3 rounded-t-xl rounded-b-none p-4 transition-colors'
             : compact
-              ? 'glass-panel relative rounded-xl p-3 transition-colors'
-              : 'glass-panel relative rounded-xl p-4 transition-colors'}
+              ? `glass-panel relative p-3 transition-colors ${isMobileComposer ? 'rounded-t-2xl rounded-b-none shadow-[0_-12px_36px_rgba(54,35,28,0.12)]' : 'rounded-xl'}`
+              : `glass-panel relative transition-colors ${isMobileComposer ? 'rounded-t-2xl rounded-b-none p-3 shadow-[0_-12px_36px_rgba(54,35,28,0.12)]' : 'rounded-xl p-4'}`}
           onDragOver={(event) => event.preventDefault()}
           onDrop={handleDrop}
         >
@@ -747,6 +752,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
               ref={fileSearchRef}
               cwd={activeLaunchWorkDir || resolvedWorkDir || ''}
               filter={atFilter}
+              compact={isMobileComposer}
               onNavigate={(relativePath) => {
                 if (atCursorPos < 0) return
                 const replacement = `@${relativePath}`
@@ -829,14 +835,16 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
                   </button>
                 ))}
               </div>
-              <div className="flex items-center gap-1.5 border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-tertiary)]">
-                <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-container-low)] px-1.5 py-0.5 font-mono text-[10px]">Up/Down</kbd>
-                <span>{t('chat.navigate')}</span>
-                <kbd className="ml-2 rounded border border-[var(--color-border)] bg-[var(--color-surface-container-low)] px-1.5 py-0.5 font-mono text-[10px]">Enter</kbd>
-                <span>{t('chat.select')}</span>
-                <kbd className="ml-2 rounded border border-[var(--color-border)] bg-[var(--color-surface-container-low)] px-1.5 py-0.5 font-mono text-[10px]">Esc</kbd>
-                <span>{t('chat.dismiss')}</span>
-              </div>
+              {!isMobileComposer ? (
+                <div className="flex items-center gap-1.5 border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-tertiary)]">
+                  <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-container-low)] px-1.5 py-0.5 font-mono text-[10px]">Up/Down</kbd>
+                  <span>{t('chat.navigate')}</span>
+                  <kbd className="ml-2 rounded border border-[var(--color-border)] bg-[var(--color-surface-container-low)] px-1.5 py-0.5 font-mono text-[10px]">Enter</kbd>
+                  <span>{t('chat.select')}</span>
+                  <kbd className="ml-2 rounded border border-[var(--color-border)] bg-[var(--color-surface-container-low)] px-1.5 py-0.5 font-mono text-[10px]">Esc</kbd>
+                  <span>{t('chat.dismiss')}</span>
+                </div>
+              ) : null}
             </div>
           )}
 
@@ -879,7 +887,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
               disabled={isWorkspaceMissing}
               rows={1}
               className={`w-full resize-none bg-transparent text-sm leading-relaxed text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)] disabled:opacity-50 ${
-                compact ? 'py-1.5 pb-11' : 'py-2 pb-12'
+                useCompactControls ? 'py-1.5 pb-14' : 'py-2 pb-12'
               }`}
             />
           )}
@@ -887,7 +895,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
           <div className={isHeroComposer
             ? 'flex items-center justify-between border-t border-[var(--color-border-separator)] pt-3'
             : `absolute bottom-0 left-0 right-0 flex items-center justify-between border-t border-[var(--color-border-separator)] ${
-              compact ? 'gap-2 px-2.5 py-2' : 'px-3 py-3'
+              useCompactControls ? 'gap-2 px-2.5 py-2' : 'px-3 py-3'
             }`}>
             <div className="flex min-w-0 items-center gap-2">
               {!isMemberSession && (
@@ -896,13 +904,13 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
                     <button
                       onClick={() => setPlusMenuOpen((value) => !value)}
                       aria-label="Open composer tools"
-                      className="rounded-[var(--radius-md)] p-1.5 text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)]"
+                      className={`text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] ${isMobileComposer ? 'inline-flex h-11 w-11 items-center justify-center rounded-xl' : 'rounded-[var(--radius-md)] p-1.5'}`}
                     >
                       <span className="material-symbols-outlined text-[18px]">add</span>
                     </button>
 
                     {plusMenuOpen && (
-                      <div className="absolute bottom-full left-0 z-50 mb-2 w-[240px] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] py-1 shadow-[var(--shadow-dropdown)]">
+                      <div className={`absolute bottom-full left-0 z-50 mb-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] py-1 shadow-[var(--shadow-dropdown)] ${isMobileComposer ? 'w-[min(240px,calc(100vw-32px))]' : 'w-[240px]'}`}>
                         <button
                           onClick={() => {
                             fileInputRef.current?.click()
@@ -924,7 +932,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
                     )}
                   </div>
 
-                  <PermissionModeSelector compact={compact} />
+                  <PermissionModeSelector compact={useCompactControls} />
                 </>
               )}
             </div>
@@ -937,26 +945,27 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
                   messageCount={messageCount}
                   runtimeSelectionKey={runtimeSelectionKey}
                   fallbackModelLabel={runtimeModelLabel}
-                  compact={compact}
+                  compact={useCompactControls}
                 />
               )}
               {!isMemberSession && activeTabId && (
-                <ModelSelector runtimeKey={activeTabId} disabled={isActive} compact={compact} />
+                <ModelSelector runtimeKey={activeTabId} disabled={isActive} compact={useCompactControls} />
               )}
               <button
                 onClick={!isMemberSession && isActive ? () => stopGeneration(activeTabId!) : handleSubmit}
                 disabled={!isMemberSession && isActive ? false : !canSubmit}
+                aria-label={!isMemberSession && isActive ? t('common.stop') : isMemberSession ? t('common.send') : t('common.run')}
                 title={
                   !isMemberSession && isActive
                     ? t('chat.stopTitle')
-                    : compact
+                    : iconOnlyAction
                       ? isMemberSession
                         ? t('common.send')
                         : t('common.run')
                       : undefined
                 }
-                className={`flex items-center justify-center gap-1 rounded-lg text-xs font-semibold transition-all hover:brightness-105 disabled:opacity-30 ${
-                  compact ? 'h-8 w-8 px-0 py-0' : 'w-[112px] px-3 py-1.5'
+                className={`flex shrink-0 items-center justify-center gap-1 rounded-lg text-xs font-semibold transition-all hover:brightness-105 disabled:opacity-30 ${
+                  iconOnlyAction ? `${isMobileComposer ? 'h-11 w-11 rounded-xl px-0 py-0' : 'h-8 w-8 px-0 py-0'}` : 'w-[112px] px-3 py-1.5'
                 } ${
                   !isMemberSession && isActive
                     ? 'bg-[var(--color-error-container)] text-[var(--color-on-error-container)]'
@@ -966,7 +975,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
                 <span className="material-symbols-outlined text-[14px]">
                   {!isMemberSession && isActive ? 'stop' : 'arrow_forward'}
                 </span>
-                {!compact && (!isMemberSession && isActive ? t('common.stop') : isMemberSession ? t('common.send') : t('common.run'))}
+                {!iconOnlyAction && (!isMemberSession && isActive ? t('common.stop') : isMemberSession ? t('common.send') : t('common.run'))}
               </button>
             </div>
           </div>
@@ -975,7 +984,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
         <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
 
         {!isMemberSession && (
-          <div className={compact ? 'mt-2 flex min-w-0 justify-center px-1' : 'mt-3 px-1'}>
+          <div className={useCompactControls ? 'mt-2 flex min-w-0 justify-center px-1' : 'mt-3 px-1'}>
             {messageCount > 0 ? (
               <ProjectContextChip
                 workDir={resolvedWorkDir}
@@ -985,7 +994,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
                 isWorktree={!!gitInfo?.worktree?.enabled}
                 worktreeSlug={gitInfo?.worktree?.slug || null}
                 worktreePath={gitInfo?.worktree?.path || gitInfo?.worktree?.plannedPath || null}
-                compact={compact}
+                compact={useCompactControls}
               />
             ) : (
               <RepositoryLaunchControls

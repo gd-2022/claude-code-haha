@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type HTMLAttributes } from 'react'
 import { Sidebar } from './Sidebar'
 import { ContentRouter } from './ContentRouter'
 import { ToastContainer } from '../shared/Toast'
@@ -6,24 +6,58 @@ import { UpdateChecker } from '../shared/UpdateChecker'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useUIStore, type SettingsTab } from '../../stores/uiStore'
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
-import { initializeDesktopServerUrl, isTauriRuntime } from '../../lib/desktopRuntime'
+import {
+  H5ConnectionRequiredError,
+  initializeDesktopServerUrl,
+  isH5ConnectionRequiredError,
+  isTauriRuntime,
+} from '../../lib/desktopRuntime'
 import { TabBar } from './TabBar'
 import { StartupErrorView } from './StartupErrorView'
 import { useTabStore, SETTINGS_TAB_ID } from '../../stores/tabStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useTranslation } from '../../i18n'
+import { H5ConnectionView } from './H5ConnectionView'
+import { useMobileViewport } from '../../hooks/useMobileViewport'
+import type { Tab } from '../../stores/tabStore'
+
+function isChatTab(tab: Tab | undefined) {
+  return tab?.type === 'session'
+}
 
 export function AppShell() {
   const fetchSettings = useSettingsStore((s) => s.fetchAll)
   const sidebarOpen = useUIStore((s) => s.sidebarOpen)
+  const toggleSidebar = useUIStore((s) => s.toggleSidebar)
+  const setSidebarOpen = useUIStore((s) => s.setSidebarOpen)
   const [ready, setReady] = useState(false)
   const [startupError, setStartupError] = useState<string | null>(null)
+  const [h5StartupError, setH5StartupError] = useState<H5ConnectionRequiredError | null>(null)
+  const [bootstrapNonce, setBootstrapNonce] = useState(0)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const t = useTranslation()
+  const tauriRuntime = isTauriRuntime()
+  const isMobileShell = useMobileViewport() && !tauriRuntime
+  const tabs = useTabStore((s) => s.tabs)
+  const activeTabId = useTabStore((s) => s.activeTabId)
+  const setActiveTab = useTabStore((s) => s.setActiveTab)
+  const wasMobileShellRef = useRef(false)
+  const effectiveSidebarOpen = isMobileShell ? mobileSidebarOpen : sidebarOpen
+  const sidebarHiddenProps: HTMLAttributes<HTMLDivElement> & { inert?: '' } =
+    isMobileShell && !effectiveSidebarOpen
+      ? { 'aria-hidden': true, inert: '' }
+      : {}
 
   useEffect(() => {
     let cancelled = false
 
     const bootstrap = async () => {
+      if (!cancelled) {
+        setReady(false)
+        setStartupError(null)
+        setH5StartupError(null)
+      }
+
       try {
         await initializeDesktopServerUrl()
         await fetchSettings()
@@ -43,7 +77,13 @@ export function AppShell() {
         })().catch(() => {})
       } catch (error) {
         if (!cancelled) {
-          setStartupError(error instanceof Error ? error.message : String(error))
+          if (!tauriRuntime && isH5ConnectionRequiredError(error)) {
+            setH5StartupError(error)
+            setStartupError(null)
+          } else {
+            setStartupError(error instanceof Error ? error.message : String(error))
+            setH5StartupError(null)
+          }
           setReady(false)
         }
       }
@@ -54,11 +94,11 @@ export function AppShell() {
     return () => {
       cancelled = true
     }
-  }, [fetchSettings])
+  }, [bootstrapNonce, fetchSettings, tauriRuntime])
 
   // Listen for macOS native menu navigation events (About / Settings)
   useEffect(() => {
-    if (!isTauriRuntime()) return
+    if (!tauriRuntime) return
     let unlisten: (() => void) | undefined
     import('@tauri-apps/api/event')
       .then(({ listen }) =>
@@ -77,33 +117,114 @@ export function AppShell() {
 
   useKeyboardShortcuts()
 
+  useEffect(() => {
+    if (isMobileShell && !wasMobileShellRef.current) {
+      setMobileSidebarOpen(false)
+      setSidebarOpen(false)
+    }
+    if (!isMobileShell && wasMobileShellRef.current) {
+      setMobileSidebarOpen(false)
+    }
+    wasMobileShellRef.current = isMobileShell
+  }, [isMobileShell, setSidebarOpen])
+
+  useEffect(() => {
+    if (!ready || !isMobileShell) return
+    const activeTab = tabs.find((tab) => tab.sessionId === activeTabId)
+    if (isChatTab(activeTab) || (!activeTab && !activeTabId)) return
+    const nextChatTab = tabs.find(isChatTab)
+    if (nextChatTab) {
+      setActiveTab(nextChatTab.sessionId)
+      return
+    }
+    useTabStore.setState({ activeTabId: null })
+  }, [activeTabId, isMobileShell, ready, setActiveTab, tabs])
+
+  const setEffectiveSidebarOpen = (open: boolean) => {
+    if (isMobileShell) {
+      setMobileSidebarOpen(open)
+      setSidebarOpen(open)
+      return
+    }
+    setSidebarOpen(open)
+  }
+
+  const toggleEffectiveSidebar = () => {
+    if (isMobileShell) {
+      setEffectiveSidebarOpen(!mobileSidebarOpen)
+      return
+    }
+    toggleSidebar()
+  }
+
+  if (!tauriRuntime && h5StartupError) {
+    return (
+      <H5ConnectionView
+        initialServerUrl={h5StartupError.serverUrl}
+        error={h5StartupError.message}
+        onConnected={() => setBootstrapNonce((value) => value + 1)}
+      />
+    )
+  }
+
   if (startupError) {
     return <StartupErrorView error={startupError} />
   }
 
   if (!ready) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[var(--color-surface)] text-[var(--color-text-secondary)]">
+      <div className="app-shell-viewport flex items-center justify-center bg-[var(--color-surface)] text-[var(--color-text-secondary)]">
         {t('app.launching')}
       </div>
     )
   }
 
   return (
-    <div className="h-screen flex overflow-hidden bg-[var(--color-surface)]">
+    <div className={`app-shell app-shell-viewport flex overflow-hidden bg-[var(--color-surface)]${isMobileShell ? ' app-shell--mobile' : ''}`}>
+      {isMobileShell && effectiveSidebarOpen ? (
+        <button
+          type="button"
+          data-testid="sidebar-backdrop"
+          className="app-shell-backdrop fixed inset-0 z-40 border-0 p-0"
+          aria-label={t('sidebar.collapse')}
+          onClick={() => setEffectiveSidebarOpen(false)}
+        />
+      ) : null}
       <div
+        id="sidebar-shell"
         data-testid="sidebar-shell"
-        data-state={sidebarOpen ? 'open' : 'closed'}
-        className="sidebar-shell"
+        data-state={effectiveSidebarOpen ? 'open' : 'closed'}
+        data-mobile={isMobileShell ? 'true' : 'false'}
+        className={`sidebar-shell${isMobileShell ? ' sidebar-shell--mobile' : ''}`}
+        {...sidebarHiddenProps}
       >
-        <Sidebar />
+        {!isMobileShell || effectiveSidebarOpen ? (
+          <Sidebar isMobile={isMobileShell} onRequestClose={() => setEffectiveSidebarOpen(false)} />
+        ) : null}
       </div>
       <main
         id="content-area"
-        data-sidebar-state={sidebarOpen ? 'open' : 'closed'}
-        className="min-w-0 flex-1 flex flex-col overflow-hidden"
+        data-sidebar-state={effectiveSidebarOpen ? 'open' : 'closed'}
+        className={`min-w-0 flex-1 flex flex-col overflow-hidden${isMobileShell ? ' app-shell-main--mobile' : ''}`}
       >
-        <TabBar />
+        {isMobileShell ? (
+          <div className="flex shrink-0 items-center justify-start border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+            <button
+              type="button"
+              data-testid="mobile-sidebar-toggle"
+              aria-controls="sidebar-shell"
+              aria-expanded={effectiveSidebarOpen}
+              aria-label={effectiveSidebarOpen ? t('sidebar.collapse') : t('sidebar.expand')}
+              onClick={toggleEffectiveSidebar}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-container-low)] text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)]"
+            >
+              <span className="material-symbols-outlined text-[20px]">
+                {effectiveSidebarOpen ? 'close' : 'menu'}
+              </span>
+            </button>
+          </div>
+        ) : null}
+        {!isMobileShell ? <TabBar /> : null}
         <ContentRouter />
       </main>
       <ToastContainer />

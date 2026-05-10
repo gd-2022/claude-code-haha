@@ -3,6 +3,14 @@ import { cleanup, createEvent, fireEvent, render, screen, within } from '@testin
 import '@testing-library/jest-dom'
 import { act } from 'react'
 
+const viewportMocks = vi.hoisted(() => ({
+  isMobile: false,
+}))
+
+vi.mock('../hooks/useMobileViewport', () => ({
+  useMobileViewport: () => viewportMocks.isMobile,
+}))
+
 vi.mock('../components/chat/MessageList', () => ({
   MessageList: ({ compact }: { compact?: boolean }) => (
     <div data-testid="message-list" data-compact={compact ? 'true' : 'false'} />
@@ -66,6 +74,7 @@ import {
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
+  viewportMocks.isMobile = false
   useTabStore.setState({ tabs: [], activeTabId: null })
   useSessionStore.setState({ sessions: [], activeSessionId: null, isLoading: false, error: null })
   useChatStore.setState({ sessions: {} })
@@ -445,6 +454,65 @@ describe('ActiveSession task polling', () => {
 
     expect(screen.queryByTestId('workspace-panel')).not.toBeInTheDocument()
     expect(screen.getByTestId('message-list')).toBeInTheDocument()
+  })
+
+  it('keeps chat as the primary surface on mobile by hiding workspace and terminal panels', () => {
+    const sessionId = 'mobile-session'
+    viewportMocks.isMobile = true
+
+    useSessionStore.setState({
+      sessions: [{
+        id: sessionId,
+        title: 'Mobile Session',
+        createdAt: '2026-04-10T00:00:00.000Z',
+        modifiedAt: '2026-04-10T00:00:00.000Z',
+        messageCount: 1,
+        projectPath: '/tmp/project-root',
+        workDir: '/tmp/project-root',
+        workDirExists: true,
+      }],
+      activeSessionId: sessionId,
+      isLoading: false,
+      error: null,
+    })
+    useTabStore.setState({
+      tabs: [{ sessionId, title: 'Mobile Session', type: 'session', status: 'idle' }],
+      activeTabId: sessionId,
+    })
+    useChatStore.setState({
+      sessions: {
+        [sessionId]: {
+          messages: [{ id: 'msg-1', type: 'assistant_text', content: 'hello', timestamp: 1 }],
+          chatState: 'idle',
+          connectionState: 'connected',
+          streamingText: '',
+          streamingToolInput: '',
+          activeToolUseId: null,
+          activeToolName: null,
+          activeThinkingId: null,
+          pendingPermission: null,
+          pendingComputerUsePermission: null,
+          tokenUsage: { input_tokens: 0, output_tokens: 0 },
+          elapsedSeconds: 0,
+          statusVerb: '',
+          slashCommands: [],
+          agentTaskNotifications: {},
+          elapsedTimer: null,
+        },
+      },
+    })
+    useWorkspacePanelStore.getState().openPanel(sessionId)
+    useTerminalPanelStore.getState().openPanel(sessionId)
+
+    render(<ActiveSession />)
+
+    expect(screen.getByTestId('active-session-chat-column')).toHaveClass('min-w-0')
+    expect(screen.getByTestId('message-list')).toHaveAttribute('data-compact', 'false')
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-compact', 'false')
+    expect(screen.queryByTestId('workspace-panel')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('workspace-resize-handle')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('session-terminal-panel')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('terminal-resize-handle')).not.toBeInTheDocument()
   })
 
   it('renders a bottom terminal panel in the current session cwd and can promote it to a tab', async () => {

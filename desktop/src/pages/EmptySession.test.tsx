@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   wsOnMessage: vi.fn(),
   wsSend: vi.fn(),
   wsDisconnect: vi.fn(),
+  isMobile: false,
+  isTauriRuntime: false,
 }))
 
 vi.mock('../api/sessions', () => ({
@@ -51,6 +53,14 @@ vi.mock('../api/websocket', () => ({
   },
 }))
 
+vi.mock('../hooks/useMobileViewport', () => ({
+  useMobileViewport: () => mocks.isMobile,
+}))
+
+vi.mock('../lib/desktopRuntime', () => ({
+  isTauriRuntime: () => mocks.isTauriRuntime,
+}))
+
 vi.mock('../components/shared/DirectoryPicker', () => ({
   DirectoryPicker: ({ value, onChange }: { value: string; onChange: (path: string) => void }) => (
     <button type="button" aria-label="Pick project" data-value={value} onClick={() => onChange('/workspace/project')}>
@@ -60,11 +70,19 @@ vi.mock('../components/shared/DirectoryPicker', () => ({
 }))
 
 vi.mock('../components/controls/PermissionModeSelector', () => ({
-  PermissionModeSelector: () => <button type="button">Bypass</button>,
+  PermissionModeSelector: ({ compact }: { compact?: boolean }) => (
+    <button type="button" data-testid="permission-mode-selector" data-compact={compact ? 'true' : 'false'}>
+      Bypass
+    </button>
+  ),
 }))
 
 vi.mock('../components/controls/ModelSelector', () => ({
-  ModelSelector: () => <button type="button">Model</button>,
+  ModelSelector: ({ compact }: { compact?: boolean }) => (
+    <button type="button" data-testid="model-selector" data-compact={compact ? 'true' : 'false'}>
+      Model
+    </button>
+  ),
 }))
 
 import { EmptySession } from './EmptySession'
@@ -126,6 +144,8 @@ describe('EmptySession', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.isMobile = false
+    mocks.isTauriRuntime = false
     useSettingsStore.setState({ locale: 'en', activeProviderName: null })
     useSessionStore.setState(initialSessionState, true)
     useChatStore.setState(initialChatState, true)
@@ -162,6 +182,18 @@ describe('EmptySession', () => {
     useTabStore.setState(initialTabState, true)
     useSessionRuntimeStore.setState(initialRuntimeState, true)
     useUIStore.setState(initialUiState, true)
+  })
+
+  it('uses compact composer controls on phone-sized H5 browsers', async () => {
+    mocks.isMobile = true
+
+    render(<EmptySession />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('permission-mode-selector')).toHaveAttribute('data-compact', 'true')
+    })
+    expect(screen.getByTestId('model-selector')).toHaveAttribute('data-compact', 'true')
+    expect(screen.getByRole('button', { name: 'Run' })).toHaveClass('h-11', 'w-11')
   })
 
   it('creates a session with the selected project and branch when submitted', async () => {

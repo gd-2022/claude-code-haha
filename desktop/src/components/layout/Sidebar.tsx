@@ -15,7 +15,12 @@ type TimeGroup = 'today' | 'yesterday' | 'last7days' | 'last30days' | 'older'
 
 const TIME_GROUP_ORDER: TimeGroup[] = ['today', 'yesterday', 'last7days', 'last30days', 'older']
 
-export function Sidebar() {
+type SidebarProps = {
+  isMobile?: boolean
+  onRequestClose?: () => void
+}
+
+export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
   const sessions = useSessionStore((s) => s.sessions)
   const selectedProjects = useSessionStore((s) => s.selectedProjects)
   const isLoading = useSessionStore((s) => s.isLoading)
@@ -116,6 +121,10 @@ export function Sidebar() {
   }, [])
 
   const t = useTranslation()
+  const expanded = isMobile ? true : sidebarOpen
+  const closeMobileDrawer = useCallback(() => {
+    if (isMobile) onRequestClose?.()
+  }, [isMobile, onRequestClose])
 
   const timeGroupLabels: Record<TimeGroup, string> = {
     today: t('sidebar.timeGroup.today'),
@@ -129,51 +138,64 @@ export function Sidebar() {
     <aside
       onMouseDown={handleSidebarDrag}
       className="sidebar-panel relative h-full flex flex-col bg-[var(--color-surface-sidebar)] border-r border-[var(--color-border)] select-none"
-      data-state={sidebarOpen ? 'open' : 'closed'}
+      data-state={expanded ? 'open' : 'closed'}
       aria-label="Sidebar"
     >
       <div className={`px-3 pb-2 ${isTauri && !isWindows ? 'pt-[44px]' : 'pt-3'}`}>
-        <div className={`flex ${sidebarOpen ? 'items-center justify-between gap-3' : 'flex-col items-center gap-2'}`}>
-          <div className={`flex min-w-0 items-center ${sidebarOpen ? 'gap-2.5' : 'justify-center'}`}>
+        <div className={`flex ${expanded ? 'items-center justify-between gap-3' : 'flex-col items-center gap-2'}`}>
+          <div className={`flex min-w-0 items-center ${expanded ? 'gap-2.5' : 'justify-center'}`}>
             <img src="/app-icon.png" alt="" className="h-8 w-8 flex-shrink-0" />
             <span
-              className={`sidebar-copy ${sidebarOpen ? 'sidebar-copy--visible' : 'sidebar-copy--hidden'} text-[13px] font-semibold tracking-tight text-[var(--color-text-primary)]`}
+              className={`sidebar-copy ${expanded ? 'sidebar-copy--visible' : 'sidebar-copy--hidden'} text-[13px] font-semibold tracking-tight text-[var(--color-text-primary)]`}
               style={{ fontFamily: 'var(--font-headline)' }}
             >
               Claude Code <span className="text-[var(--color-primary-container)]">Haha</span>
             </span>
           </div>
-          <div className={`flex items-center ${sidebarOpen ? 'gap-1.5' : 'flex-col gap-2'}`}>
+          <div className={`flex items-center ${expanded ? 'gap-1.5' : 'flex-col gap-2'}`}>
             <a
               href="https://github.com/NanmiCoder/cc-haha"
               target="_blank"
               rel="noopener noreferrer"
-              className={`sidebar-copy ${sidebarOpen ? 'sidebar-copy--visible' : 'sidebar-copy--hidden'} inline-flex items-center justify-center rounded-md p-1 text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)]`}
+              className={`sidebar-copy ${expanded ? 'sidebar-copy--visible' : 'sidebar-copy--hidden'} inline-flex items-center justify-center rounded-md p-1 text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)]`}
               title="GitHub"
-              tabIndex={sidebarOpen ? undefined : -1}
-              aria-hidden={!sidebarOpen}
+              tabIndex={expanded ? undefined : -1}
+              aria-hidden={!expanded}
             >
               <GitHubIcon />
             </a>
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              data-testid={sidebarOpen ? 'sidebar-collapse-button' : 'sidebar-expand-button'}
-              className={`sidebar-toggle-button ${sidebarOpen ? 'sidebar-toggle-button--open h-8 w-8' : 'sidebar-toggle-button--collapsed h-8 w-8'} flex items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface-sidebar)]`}
-              aria-label={sidebarOpen ? t('sidebar.collapse') : t('sidebar.expand')}
-              title={sidebarOpen ? t('sidebar.collapse') : t('sidebar.expand')}
-            >
-              <SidebarToggleIcon collapsed={!sidebarOpen} />
-            </button>
+            {isMobile ? (
+              <button
+                type="button"
+                onClick={closeMobileDrawer}
+                className="sidebar-toggle-button flex h-11 w-11 items-center justify-center rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface-sidebar)]"
+                aria-label={t('sidebar.collapse')}
+                title={t('sidebar.collapse')}
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                data-testid={expanded ? 'sidebar-collapse-button' : 'sidebar-expand-button'}
+                className={`sidebar-toggle-button ${expanded ? 'sidebar-toggle-button--open h-8 w-8' : 'sidebar-toggle-button--collapsed h-8 w-8'} flex items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface-sidebar)]`}
+                aria-label={expanded ? t('sidebar.collapse') : t('sidebar.expand')}
+                title={expanded ? t('sidebar.collapse') : t('sidebar.expand')}
+              >
+                <SidebarToggleIcon collapsed={!expanded} />
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      <div className={`px-3 pb-3 flex flex-col ${sidebarOpen ? 'gap-0.5' : 'items-center gap-2'}`}>
+      <div className={`px-3 pb-3 flex flex-col ${expanded ? 'gap-0.5' : 'items-center gap-2'}`}>
         <NavItem
           active={false}
-          collapsed={!sidebarOpen}
+          collapsed={!expanded}
           label={t('sidebar.newSession')}
+          touchFriendly={isMobile}
           onClick={async () => {
             try {
               const currentTabId = useTabStore.getState().activeTabId
@@ -184,6 +206,7 @@ export function Sidebar() {
               const sessionId = await useSessionStore.getState().createSession(workDir)
               useTabStore.getState().openTab(sessionId, t('sidebar.newSession'))
               useChatStore.getState().connectToSession(sessionId)
+              closeMobileDrawer()
             } catch (error) {
               addToast({
                 type: 'error',
@@ -195,18 +218,24 @@ export function Sidebar() {
         >
           {t('sidebar.newSession')}
         </NavItem>
-        <NavItem
-          active={activeTabId === SCHEDULED_TAB_ID}
-          collapsed={!sidebarOpen}
-          label={t('sidebar.scheduled')}
-          onClick={() => useTabStore.getState().openTab(SCHEDULED_TAB_ID, t('sidebar.scheduled'), 'scheduled')}
-          icon={<ClockIcon />}
-        >
-          {t('sidebar.scheduled')}
-        </NavItem>
+        {!isMobile && (
+          <NavItem
+            active={activeTabId === SCHEDULED_TAB_ID}
+            collapsed={!expanded}
+            label={t('sidebar.scheduled')}
+            touchFriendly={isMobile}
+            onClick={() => {
+              useTabStore.getState().openTab(SCHEDULED_TAB_ID, t('sidebar.scheduled'), 'scheduled')
+              closeMobileDrawer()
+            }}
+            icon={<ClockIcon />}
+          >
+            {t('sidebar.scheduled')}
+          </NavItem>
+        )}
       </div>
 
-      {sidebarOpen ? (
+      {expanded ? (
         <>
           <div
             data-testid="sidebar-project-filter-section"
@@ -286,10 +315,11 @@ export function Sidebar() {
                             onClick={() => {
                               useTabStore.getState().openTab(session.id, session.title)
                               useChatStore.getState().connectToSession(session.id)
+                              closeMobileDrawer()
                             }}
                             onContextMenu={(e) => handleContextMenu(e, session.id)}
                             className={`
-                              group w-full rounded-[12px] px-3 py-2 text-left text-sm transition-colors duration-200
+                              group w-full rounded-[12px] px-3 ${isMobile ? 'py-3' : 'py-2'} text-left text-sm transition-colors duration-200
                               ${session.id === activeTabId
                                 ? 'bg-[var(--color-sidebar-item-active)] text-[var(--color-text-primary)]'
                                 : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-sidebar-item-hover)]'
@@ -331,17 +361,23 @@ export function Sidebar() {
         <div className="flex-1" aria-hidden="true" />
       )}
 
-      <div className={`border-t border-[var(--color-border)] p-3 ${sidebarOpen ? '' : 'flex justify-center'}`}>
-        <NavItem
-          active={activeTabId === SETTINGS_TAB_ID}
-          collapsed={!sidebarOpen}
-          label={t('sidebar.settings')}
-          onClick={() => useTabStore.getState().openTab(SETTINGS_TAB_ID, t('sidebar.settings'), 'settings')}
-          icon={<span className="material-symbols-outlined text-[18px]">settings</span>}
-        >
-          {t('sidebar.settings')}
-        </NavItem>
-      </div>
+      {!isMobile && (
+        <div className={`border-t border-[var(--color-border)] p-3 ${expanded ? '' : 'flex justify-center'}`}>
+          <NavItem
+            active={activeTabId === SETTINGS_TAB_ID}
+            collapsed={!expanded}
+            label={t('sidebar.settings')}
+            touchFriendly={isMobile}
+            onClick={() => {
+              useTabStore.getState().openTab(SETTINGS_TAB_ID, t('sidebar.settings'), 'settings')
+              closeMobileDrawer()
+            }}
+            icon={<span className="material-symbols-outlined text-[18px]">settings</span>}
+          >
+            {t('sidebar.settings')}
+          </NavItem>
+        </div>
+      )}
 
       {contextMenu && sidebarOpen && (
         <div
@@ -408,6 +444,7 @@ function NavItem({
   active,
   collapsed,
   label,
+  touchFriendly,
   onClick,
   icon,
   children,
@@ -415,6 +452,7 @@ function NavItem({
   active: boolean
   collapsed: boolean
   label: string
+  touchFriendly?: boolean
   onClick: () => void
   icon: React.ReactNode
   children: React.ReactNode
@@ -426,7 +464,7 @@ function NavItem({
       title={collapsed ? label : undefined}
       className={`
         flex items-center transition-colors duration-200
-        ${collapsed ? 'h-10 w-10 justify-center rounded-[var(--radius-md)] px-0 py-0' : 'w-full gap-2.5 rounded-[12px] px-3 py-2.5 text-sm'}
+        ${collapsed ? 'h-10 w-10 justify-center rounded-[var(--radius-md)] px-0 py-0' : `w-full gap-2.5 rounded-[12px] px-3 ${touchFriendly ? 'py-3' : 'py-2.5'} text-sm`}
         ${active
           ? 'bg-[var(--color-sidebar-item-active)] font-medium text-[var(--color-text-primary)]'
           : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-sidebar-item-hover)] hover:text-[var(--color-text-primary)]'

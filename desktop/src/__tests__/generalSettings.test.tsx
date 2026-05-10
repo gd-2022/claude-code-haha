@@ -63,6 +63,10 @@ vi.mock('../pages/AdapterSettings', () => ({
   AdapterSettings: () => <div>Adapter Settings Mock</div>,
 }))
 
+vi.mock('../pages/ActivitySettings', () => ({
+  ActivitySettings: () => <div>Activity Settings Mock</div>,
+}))
+
 vi.mock('../stores/agentStore', () => ({
   useAgentStore: () => ({
     activeAgents: [],
@@ -165,6 +169,18 @@ describe('Settings > General tab', () => {
 
     const toggle = screen.getByLabelText('Skip WebFetch domain preflight')
     expect(toggle).toBeChecked()
+  })
+
+  it('opens the Token usage tab from Settings navigation above Diagnostics', () => {
+    render(<Settings />)
+
+    const usageTab = screen.getByText('Token usage')
+    const diagnosticsTab = screen.getByText('Diagnostics')
+    expect((usageTab.compareDocumentPosition(diagnosticsTab) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true)
+
+    fireEvent.click(usageTab)
+
+    expect(screen.getByText('Activity Settings Mock')).toBeInTheDocument()
   })
 
   it('lets the user disable WebFetch preflight skipping', () => {

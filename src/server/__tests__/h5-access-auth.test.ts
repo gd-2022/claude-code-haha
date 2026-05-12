@@ -167,6 +167,12 @@ function expectWebSocketUpgradeThenClose(url: string): Promise<void> {
   })
 }
 
+const settingsSurfaceEndpoints = [
+  { path: '/api/mcp', expected: { servers: [] } },
+  { path: '/api/plugins', expected: { plugins: [] } },
+  { path: '/api/agents', expectedKey: 'activeAgents' },
+] as const
+
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'h5-access-auth-test-'))
   originalConfigDir = process.env.CLAUDE_CONFIG_DIR
@@ -415,6 +421,14 @@ describe('remote H5 auth and CORS integration', () => {
     await expect(response.json()).resolves.toEqual({})
   })
 
+  test('keeps local loopback settings surface requests tokenless while H5 access is disabled', async () => {
+    for (const endpoint of settingsSurfaceEndpoints) {
+      const response = await fetch(`${baseUrl}${endpoint.path}`)
+
+      expect(response.status).toBe(200)
+    }
+  })
+
   test('lets explicitly authenticated deployments use remote capability routes while H5 access is disabled', async () => {
     await restartRemoteServer({ authRequired: true })
     process.env.ANTHROPIC_API_KEY = 'test-server-key'
@@ -601,6 +615,44 @@ describe('remote H5 auth and CORS integration', () => {
     expect(validTokenResponse.status).toBe(200)
   })
 
+  test('requires H5 token for remote browser settings surface requests when H5 access is enabled', async () => {
+    const token = await enableH5Access({
+      allowedOrigins: [PHONE_ORIGIN],
+    })
+
+    for (const endpoint of settingsSurfaceEndpoints) {
+      const missingTokenResponse = await fetch(`${baseUrl}${endpoint.path}`, {
+        headers: {
+          Origin: PHONE_ORIGIN,
+        },
+      })
+      expect(missingTokenResponse.status).toBe(401)
+
+      const wrongTokenResponse = await fetch(`${baseUrl}${endpoint.path}`, {
+        headers: {
+          Origin: PHONE_ORIGIN,
+          Authorization: 'Bearer wrong-token',
+        },
+      })
+      expect(wrongTokenResponse.status).toBe(401)
+
+      const validTokenResponse = await fetch(`${baseUrl}${endpoint.path}`, {
+        headers: {
+          Origin: PHONE_ORIGIN,
+          Authorization: `Bearer ${token}`,
+        },
+      })
+      expect(validTokenResponse.status).toBe(200)
+      expect(validTokenResponse.headers.get('Access-Control-Allow-Origin')).toBe(PHONE_ORIGIN)
+      const body = await validTokenResponse.json()
+      if ('expected' in endpoint) {
+        expect(body).toMatchObject(endpoint.expected)
+      } else {
+        expect(body).toHaveProperty(endpoint.expectedKey)
+      }
+    }
+  })
+
   test('does not allow the server API key to replace the H5 token for remote browser requests', async () => {
     process.env.ANTHROPIC_API_KEY = 'test-server-key'
     await enableH5Access({
@@ -699,6 +751,16 @@ describe('remote H5 auth and CORS integration', () => {
     await expect(response.json()).resolves.toEqual({})
   })
 
+  test('keeps local loopback settings surface requests tokenless when H5 access is enabled', async () => {
+    await enableH5Access()
+
+    for (const endpoint of settingsSurfaceEndpoints) {
+      const response = await fetch(`${baseUrl}${endpoint.path}`)
+
+      expect(response.status).toBe(200)
+    }
+  })
+
   test('blocks adapter requests from non-local browser origins when H5 access is enabled', async () => {
     await enableH5Access()
 
@@ -709,6 +771,20 @@ describe('remote H5 auth and CORS integration', () => {
     })
 
     expect(response.status).toBe(403)
+  })
+
+  test('blocks settings surface requests from untrusted browser origins when H5 access is enabled', async () => {
+    await enableH5Access()
+
+    for (const endpoint of settingsSurfaceEndpoints) {
+      const response = await fetch(`${baseUrl}${endpoint.path}`, {
+        headers: {
+          Origin: PHONE_ORIGIN,
+        },
+      })
+
+      expect(response.status).toBe(403)
+    }
   })
 
   test('requires H5 token for remote browser websocket requests when H5 access is enabled', async () => {

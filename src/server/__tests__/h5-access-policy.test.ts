@@ -78,7 +78,14 @@ describe('h5AccessPolicy', () => {
   })
 
   test('requires H5 token for LAN browser API, proxy, and chat websocket routes when enabled', () => {
-    for (const pathname of ['/api/status', '/proxy/openai/v1/chat/completions', '/ws/session-1']) {
+    for (const pathname of [
+      '/api/status',
+      '/api/mcp',
+      '/api/plugins',
+      '/api/agents',
+      '/proxy/openai/v1/chat/completions',
+      '/ws/session-1',
+    ]) {
       const request = req(`http://192.168.0.20:3456${pathname}`, {
         headers: { Origin: 'http://192.168.0.20:3456' },
       })
@@ -88,7 +95,15 @@ describe('h5AccessPolicy', () => {
   })
 
   test('blocks LAN browser capability routes while H5 access is disabled', () => {
-    for (const pathname of ['/api/status', '/proxy/openai/v1/chat/completions', '/ws/session-1', '/sdk/session-1']) {
+    for (const pathname of [
+      '/api/status',
+      '/api/mcp',
+      '/api/plugins',
+      '/api/agents',
+      '/proxy/openai/v1/chat/completions',
+      '/ws/session-1',
+      '/sdk/session-1',
+    ]) {
       const request = req(`http://192.168.0.20:3456${pathname}`, {
         headers: { Origin: 'http://192.168.0.20:3456' },
       })

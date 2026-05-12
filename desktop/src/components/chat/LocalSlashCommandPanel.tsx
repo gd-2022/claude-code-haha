@@ -32,11 +32,11 @@ type Translate = ReturnType<typeof useTranslation>
 function toneForStatus(status: McpServerRecord['status']) {
   switch (status) {
     case 'connected':
-      return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+      return 'bg-[var(--color-inspector-success-bg)] text-[var(--color-inspector-success)] border-[var(--color-inspector-border)]'
     case 'needs-auth':
-      return 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+      return 'bg-[var(--color-surface-container-low)] text-[var(--color-warning)] border-[var(--color-border)]'
     case 'failed':
-      return 'bg-rose-500/10 text-rose-600 border-rose-500/20'
+      return 'bg-[var(--color-inspector-danger-bg)] text-[var(--color-inspector-danger)] border-[var(--color-inspector-border)]'
     case 'disabled':
       return 'bg-[var(--color-surface-hover)] text-[var(--color-text-secondary)] border-[var(--color-border)]'
     default:
@@ -114,7 +114,7 @@ function EmptyState({ title, body }: { title: string; body: string }) {
 
 function ErrorState({ message }: { message: string }) {
   return (
-    <div className="rounded-2xl border border-[var(--color-error)]/20 bg-[var(--color-error)]/8 px-5 py-4 text-sm text-[var(--color-error)]">
+    <div className="rounded-2xl border border-[var(--color-inspector-border)] bg-[var(--color-inspector-panel)] px-5 py-4 text-sm text-[var(--color-inspector-danger)]">
       {message}
     </div>
   )
@@ -270,7 +270,7 @@ function UsageTab({
         </div>
       )}
       {usage.hasUnknownModelCost && (
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+        <div className="rounded-xl border border-[var(--color-inspector-border)] bg-[var(--color-inspector-panel)] px-4 py-3 text-sm text-[var(--color-warning)]">
           {t('slash.inspector.usage.unknownCost')}
         </div>
       )}
@@ -593,9 +593,7 @@ function StatusTab({
             {mcpServers.map((server) => (
               <div
                 key={`${server.name}:${server.status}`}
-                className={`flex min-h-[48px] items-center justify-between gap-4 rounded-md border px-4 py-3 font-mono ${
-                  server.status === 'failed' ? 'border-[var(--color-inspector-danger-border)] bg-[var(--color-inspector-danger-surface)]' : 'border-[var(--color-inspector-border)] bg-[var(--color-inspector-panel)]'
-                }`}
+                className="flex min-h-[48px] items-center justify-between gap-4 rounded-md border border-[var(--color-inspector-border)] bg-[var(--color-inspector-panel)] px-4 py-3 font-mono"
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <McpServerIcon status={server.status} />

@@ -31,10 +31,10 @@ const HEAT_CELL_MAX = 22
 const TOOLTIP_WIDTH = 172
 const HEAT_COLORS = [
   'var(--color-surface-container)',
-  '#f5d4c4',
-  '#eea47f',
-  '#df6b47',
-  '#bd432c',
+  'var(--color-primary-fixed)',
+  'var(--color-primary-fixed-dim)',
+  'var(--color-primary-container)',
+  'var(--color-primary)',
 ]
 const DATE_LOCALES: Record<Locale, string> = {
   en: 'en-US',
@@ -401,11 +401,11 @@ export function ActivitySettings() {
                   <div
                     id={`activity-day-tooltip-${tooltipDay.date}`}
                     role="tooltip"
-                    className="pointer-events-none absolute z-20 min-w-[172px] rounded-md border border-[#2f2825] bg-[#2f2825] px-3 py-2 text-xs shadow-xl"
+                    className="pointer-events-none absolute z-20 min-w-[172px] rounded-md border border-[var(--color-inverse-surface)] bg-[var(--color-inverse-surface)] px-3 py-2 text-xs shadow-xl"
                     style={tooltipStyle}
                   >
-                    <div className="font-medium text-[#fffaf6]">{formatDateLabel(tooltipDay.date, locale)}</div>
-                    <div className="mt-1 text-[#f2d0c0]">
+                    <div className="font-medium text-[var(--color-inverse-on-surface)]">{formatDateLabel(tooltipDay.date, locale)}</div>
+                    <div className="mt-1 text-[var(--color-primary-fixed)]">
                       {formatSessionCount(tooltipDay.sessionCount, t)} · {formatTokens(tooltipDay.tokens)} tokens
                     </div>
                   </div>

@@ -1445,6 +1445,7 @@ function GeneralSettings() {
   const THEMES: Array<{ value: ThemeMode; label: string }> = [
     { value: 'light', label: t('settings.general.appearance.light') },
     { value: 'dark', label: t('settings.general.appearance.dark') },
+    { value: 'white', label: t('settings.general.appearance.white') },
   ]
 
   const WEB_SEARCH_MODES: Array<{ value: WebSearchMode; label: string }> = [
@@ -1517,6 +1518,7 @@ function GeneralSettings() {
           <button
             key={value}
             onClick={() => void setTheme(value)}
+            aria-pressed={theme === value}
             className={`flex-1 py-2 text-xs font-semibold rounded-lg border transition-all ${
               theme === value
                 ? 'bg-[image:var(--gradient-btn-primary)] text-[var(--color-btn-primary-fg)] border-transparent shadow-[var(--shadow-button-primary)]'

@@ -56,6 +56,15 @@ describe('desktop persistence migrations', () => {
     expect(window.localStorage.getItem('cc-haha-theme')).toBeNull()
   })
 
+  test('preserves the pure white theme as a valid persisted theme', () => {
+    window.localStorage.setItem('cc-haha-theme', 'white')
+
+    const report = runDesktopPersistenceMigrations()
+
+    expect(report.migratedKeys).not.toContain('cc-haha-theme')
+    expect(window.localStorage.getItem('cc-haha-theme')).toBe('white')
+  })
+
   test('does not throw if schema version persistence is blocked', () => {
     const storage = {
       getItem: window.localStorage.getItem.bind(window.localStorage),

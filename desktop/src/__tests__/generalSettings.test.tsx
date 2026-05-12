@@ -8,6 +8,7 @@ import { useUIStore } from '../stores/uiStore'
 import { useUpdateStore } from '../stores/updateStore'
 import type { SavedProvider } from '../types/provider'
 import type { ProviderPreset } from '../types/providerPreset'
+import type { ThemeMode } from '../types/settings'
 
 const MOCK_DELETE_PROVIDER = vi.fn()
 const MOCK_GET_SETTINGS = vi.fn()
@@ -138,6 +139,7 @@ describe('Settings > General tab', () => {
 
     useSettingsStore.setState({
       locale: 'en',
+      theme: 'light',
       thinkingEnabled: true,
       skipWebFetchPreflight: true,
       desktopNotificationsEnabled: true,
@@ -152,6 +154,9 @@ describe('Settings > General tab', () => {
       h5AccessError: null,
       setThinkingEnabled: vi.fn().mockImplementation(async (enabled: boolean) => {
         useSettingsStore.setState({ thinkingEnabled: enabled })
+      }),
+      setTheme: vi.fn().mockImplementation(async (theme: ThemeMode) => {
+        useSettingsStore.setState({ theme })
       }),
       setSkipWebFetchPreflight: vi.fn().mockImplementation(async (enabled: boolean) => {
         useSettingsStore.setState({ skipWebFetchPreflight: enabled })
@@ -225,6 +230,25 @@ describe('Settings > General tab', () => {
 
     const toggle = screen.getByLabelText('Skip WebFetch domain preflight')
     expect(toggle).toBeChecked()
+  })
+
+  it('offers the pure white appearance theme', () => {
+    render(<Settings />)
+
+    fireEvent.click(screen.getByText('General'))
+    fireEvent.click(screen.getByRole('button', { name: 'Pure White' }))
+
+    expect(useSettingsStore.getState().setTheme).toHaveBeenCalledWith('white')
+  })
+
+  it('marks the pure white appearance theme as selected', () => {
+    useSettingsStore.setState({ theme: 'white' })
+    render(<Settings />)
+
+    fireEvent.click(screen.getByText('General'))
+
+    expect(screen.getByRole('button', { name: 'Pure White' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Warm Classic' })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('opens the Token usage tab from Settings navigation above Diagnostics', () => {

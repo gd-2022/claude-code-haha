@@ -3,7 +3,7 @@ import { ApiError } from '../api/client'
 import { settingsApi } from '../api/settings'
 import { modelsApi } from '../api/models'
 import { h5AccessApi } from '../api/h5Access'
-import type { H5AccessSettings, PermissionMode, EffortLevel, ModelInfo, ThemeMode, WebSearchSettings } from '../types/settings'
+import { isThemeMode, type H5AccessSettings, type PermissionMode, type EffortLevel, type ModelInfo, type ThemeMode, type WebSearchSettings } from '../types/settings'
 import type { Locale } from '../i18n'
 import { useUIStore } from './uiStore'
 
@@ -94,7 +94,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         settingsApi.getUser(),
         loadH5AccessSettings(previousH5Access),
       ])
-      const theme = userSettings.theme === 'dark' ? 'dark' : 'light'
+      const theme = isThemeMode(userSettings.theme) ? userSettings.theme : 'light'
       useUIStore.getState().setTheme(theme)
       set({
         permissionMode: mode,

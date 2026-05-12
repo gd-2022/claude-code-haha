@@ -677,9 +677,10 @@ export const en = {
 
   // Settings > General
   'settings.general.appearanceTitle': 'Appearance',
-  'settings.general.appearanceDescription': 'Switch between the original light workspace and the new dark workspace.',
-  'settings.general.appearance.light': 'Light',
+  'settings.general.appearanceDescription': 'Switch between the warm classic workspace, dark workspace, and a pure white workspace.',
+  'settings.general.appearance.light': 'Warm Classic',
   'settings.general.appearance.dark': 'Dark',
+  'settings.general.appearance.white': 'Pure White',
   'settings.general.languageTitle': 'Language',
   'settings.general.languageDescription': 'Choose the display language for the application.',
   'settings.general.responseLangTitle': 'Response Language',

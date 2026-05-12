@@ -158,6 +158,26 @@ describe('desktopRuntime browser H5 bootstrap', () => {
     })
   })
 
+  it('prefers an explicit Vite desktop server URL over a remembered H5 server URL', async () => {
+    clientMocks.defaultBaseUrl = 'http://127.0.0.1:55189'
+    clientMocks.explicitDefaultBaseUrl = true
+    window.history.pushState({}, '', '/')
+    window.localStorage.setItem(H5_SERVER_URL_STORAGE_KEY, 'http://192.168.0.102:3456')
+    window.localStorage.setItem(H5_TOKEN_STORAGE_KEY, 'stale-h5-token')
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      healthOkResponse(),
+    ) as typeof fetch
+
+    await expect(initializeDesktopServerUrl()).resolves.toBe('http://127.0.0.1:55189')
+
+    expect(clientMocks.setBaseUrl).toHaveBeenLastCalledWith('http://127.0.0.1:55189')
+    expect(clientMocks.setAuthToken).toHaveBeenLastCalledWith(null)
+    expect(clientMocks.postVerify).not.toHaveBeenCalled()
+    expect(globalThis.fetch).toHaveBeenCalledWith('http://127.0.0.1:55189/api/status', {
+      cache: 'no-store',
+    })
+  })
+
   it('normalizes unreachable remote browser startup into a recoverable H5 error', async () => {
     vi.useFakeTimers()
     globalThis.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) as typeof fetch

@@ -204,6 +204,14 @@ describe('SettingsService', () => {
     expect(settings.model).toBe('claude-opus-4-7')
   })
 
+  it('should write and read the pure white theme setting', async () => {
+    const svc = new SettingsService()
+    await svc.updateUserSettings({ theme: 'white' })
+
+    const settings = await svc.getUserSettings()
+    expect(settings.theme).toBe('white')
+  })
+
   it('should merge settings on update (shallow merge)', async () => {
     const svc = new SettingsService()
     await svc.updateUserSettings({ theme: 'dark' })

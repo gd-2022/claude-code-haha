@@ -137,10 +137,11 @@ async function initializeBrowserServerUrl(fallbackUrl: string) {
   const queryUrl = query?.get('serverUrl') ?? null
   const queryToken = normalizeToken(query?.get('h5Token') ?? query?.get('token'))
   const stored = readStoredH5Connection()
+  const configuredUrl = getConfiguredBrowserServerUrl(fallbackUrl)
   const requestedUrl =
     normalizeServerUrl(queryUrl) ??
+    configuredUrl ??
     stored.serverUrl ??
-    getConfiguredBrowserServerUrl(fallbackUrl) ??
     fallbackUrl
   const token = queryToken ?? stored.token
   const browserH5Runtime = requiresH5AuthForServerUrl(requestedUrl)

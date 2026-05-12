@@ -21,12 +21,21 @@ type SidebarProps = {
 }
 
 export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
+  const t = useTranslation()
   const sessions = useSessionStore((s) => s.sessions)
   const selectedProjects = useSessionStore((s) => s.selectedProjects)
   const isLoading = useSessionStore((s) => s.isLoading)
   const error = useSessionStore((s) => s.error)
   const fetchSessions = useSessionStore((s) => s.fetchSessions)
   const deleteSession = useSessionStore((s) => s.deleteSession)
+  const deleteSessions = useSessionStore((s) => s.deleteSessions)
+  const isBatchMode = useSessionStore((s) => s.isBatchMode)
+  const selectedSessionIds = useSessionStore((s) => s.selectedSessionIds)
+  const enterBatchMode = useSessionStore((s) => s.enterBatchMode)
+  const exitBatchMode = useSessionStore((s) => s.exitBatchMode)
+  const toggleSessionSelected = useSessionStore((s) => s.toggleSessionSelected)
+  const selectSessions = useSessionStore((s) => s.selectSessions)
+  const deselectSessions = useSessionStore((s) => s.deselectSessions)
   const renameSession = useSessionStore((s) => s.renameSession)
   const addToast = useUIStore((s) => s.addToast)
   const sidebarOpen = useUIStore((s) => s.sidebarOpen)
@@ -37,8 +46,11 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(null)
+  const [pendingBatchDeleteSessionIds, setPendingBatchDeleteSessionIds] = useState<string[] | null>(null)
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [lastSelectedSessionId, setLastSelectedSessionId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchSessions()
@@ -71,11 +83,24 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
 
   const timeGroups = useMemo(() => groupByTime(filteredSessions), [filteredSessions])
   const showInitialLoading = isLoading && sessions.length === 0
+  const filteredSessionIds = useMemo(() => filteredSessions.map((session) => session.id), [filteredSessions])
+  const selectedCount = selectedSessionIds.size
+  const sessionsById = useMemo(
+    () => new Map(sessions.map((session) => [session.id, session])),
+    [sessions],
+  )
+  const pendingBatchDeleteSessions = useMemo(
+    () => (pendingBatchDeleteSessionIds ?? [])
+      .map((sessionId) => sessionsById.get(sessionId))
+      .filter((session): session is SessionListItem => Boolean(session)),
+    [pendingBatchDeleteSessionIds, sessionsById],
+  )
 
   const handleContextMenu = useCallback((e: React.MouseEvent, id: string) => {
     e.preventDefault()
+    if (isBatchMode) return
     setContextMenu({ id, x: e.clientX, y: e.clientY })
-  }, [])
+  }, [isBatchMode])
 
   const handleDelete = useCallback((id: string) => {
     setContextMenu(null)
@@ -89,6 +114,83 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
     closeTab(pendingDeleteSessionId)
     setPendingDeleteSessionId(null)
   }, [closeTab, deleteSession, disconnectSession, pendingDeleteSessionId])
+
+  const handleBatchSessionClick = useCallback((event: React.MouseEvent, id: string) => {
+    if (event.shiftKey && lastSelectedSessionId) {
+      const start = filteredSessionIds.indexOf(lastSelectedSessionId)
+      const end = filteredSessionIds.indexOf(id)
+      if (start >= 0 && end >= 0) {
+        const [from, to] = start < end ? [start, end] : [end, start]
+        selectSessions(filteredSessionIds.slice(from, to + 1))
+        setLastSelectedSessionId(id)
+        return
+      }
+    }
+
+    toggleSessionSelected(id)
+    setLastSelectedSessionId(id)
+  }, [filteredSessionIds, lastSelectedSessionId, selectSessions, toggleSessionSelected])
+
+  const handleExitBatchMode = useCallback(() => {
+    exitBatchMode()
+    setLastSelectedSessionId(null)
+    setPendingBatchDeleteSessionIds(null)
+  }, [exitBatchMode])
+
+  const requestBatchDelete = useCallback((ids: string[]) => {
+    if (ids.length === 0) return
+    setPendingBatchDeleteSessionIds([...new Set(ids)])
+  }, [])
+
+  const confirmBatchDelete = useCallback(async () => {
+    const ids = pendingBatchDeleteSessionIds ?? []
+    if (ids.length === 0) return
+
+    setIsBatchDeleting(true)
+    try {
+      const result = await deleteSessions(ids)
+      for (const sessionId of result.successes) {
+        disconnectSession(sessionId)
+        closeTab(sessionId)
+      }
+
+      if (result.failures.length > 0) {
+        addToast({
+          type: 'error',
+          message: t('sidebar.batchDeleteFailed', { count: result.failures.length }),
+        })
+      } else {
+        addToast({
+          type: 'success',
+          message: t('sidebar.batchDeleteSucceeded', { count: result.successes.length }),
+        })
+        handleExitBatchMode()
+      }
+      setPendingBatchDeleteSessionIds(null)
+    } catch (error) {
+      addToast({
+        type: 'error',
+        message: error instanceof Error ? error.message : t('sidebar.batchDeleteFailed', { count: ids.length }),
+      })
+    } finally {
+      setIsBatchDeleting(false)
+    }
+  }, [addToast, closeTab, deleteSessions, disconnectSession, handleExitBatchMode, pendingBatchDeleteSessionIds, t])
+
+  const toggleGroupSelection = useCallback((ids: string[]) => {
+    const allSelected = ids.every((id) => selectedSessionIds.has(id))
+    if (allSelected) {
+      deselectSessions(ids)
+    } else {
+      selectSessions(ids)
+    }
+  }, [deselectSessions, selectSessions, selectedSessionIds])
+
+  const selectOlderThan = useCallback((days: number) => {
+    const ids = getSessionsOlderThan(filteredSessions, days)
+    selectSessions(ids)
+    requestBatchDelete(ids)
+  }, [filteredSessions, requestBatchDelete, selectSessions])
 
   const handleStartRename = useCallback((id: string, currentTitle: string) => {
     setContextMenu(null)
@@ -122,7 +224,6 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
     startDraggingRef.current?.()
   }, [])
 
-  const t = useTranslation()
   const expanded = isMobile ? true : sidebarOpen
   const closeMobileDrawer = useCallback(() => {
     if (isMobile) onRequestClose?.()
@@ -135,6 +236,27 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
     last30days: t('sidebar.timeGroup.last30days'),
     older: t('sidebar.timeGroup.older'),
   }
+
+  useEffect(() => {
+    if (!isBatchMode) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, [contenteditable="true"]')) return
+
+      if (event.key === 'Escape') {
+        handleExitBatchMode()
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+        event.preventDefault()
+        selectSessions(filteredSessionIds)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [filteredSessionIds, handleExitBatchMode, isBatchMode, selectSessions])
 
   return (
     <aside
@@ -244,20 +366,37 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
             className="sidebar-section sidebar-section--visible relative z-20 flex-none px-3 pb-2"
             style={{ overflow: 'visible' }}
           >
-            <div className="flex h-9 items-center rounded-[14px] border border-[var(--color-sidebar-search-border)] bg-[var(--color-sidebar-search-bg)] pl-1.5 pr-3 transition-colors focus-within:border-[var(--color-border-focus)]">
-              <ProjectFilter variant="embedded" />
-              <span className="mx-2 h-4 w-px bg-[var(--color-border)]/80" aria-hidden="true" />
-              <span className="pointer-events-none flex shrink-0 items-center text-[var(--color-text-tertiary)]">
-                <SearchIcon />
-              </span>
-              <input
-                id="sidebar-search"
-                type="text"
-                placeholder={t('sidebar.searchPlaceholder')}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="min-w-0 flex-1 bg-transparent pl-2 pr-0 text-[13px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none"
-              />
+            <div className="flex items-center gap-1.5">
+              <div className="flex h-9 min-w-0 flex-1 items-center rounded-[14px] border border-[var(--color-sidebar-search-border)] bg-[var(--color-sidebar-search-bg)] pl-1.5 pr-3 transition-colors focus-within:border-[var(--color-border-focus)]">
+                <ProjectFilter variant="embedded" />
+                <span className="mx-2 h-4 w-px bg-[var(--color-border)]/80" aria-hidden="true" />
+                <span className="pointer-events-none flex shrink-0 items-center text-[var(--color-text-tertiary)]">
+                  <SearchIcon />
+                </span>
+                <input
+                  id="sidebar-search"
+                  type="text"
+                  placeholder={t('sidebar.searchPlaceholder')}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="min-w-0 flex-1 bg-transparent pl-2 pr-0 text-[13px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={isBatchMode ? handleExitBatchMode : enterBatchMode}
+                className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[12px] border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)] ${
+                  isBatchMode
+                    ? 'border-[var(--color-brand)] bg-[var(--color-sidebar-item-active)] text-[var(--color-brand)]'
+                    : 'border-[var(--color-sidebar-search-border)] bg-[var(--color-sidebar-search-bg)] text-[var(--color-text-secondary)] hover:bg-[var(--color-sidebar-item-hover)] hover:text-[var(--color-text-primary)]'
+                }`}
+                aria-label={isBatchMode ? t('sidebar.batchExit') : t('sidebar.batchManage')}
+                title={isBatchMode ? t('sidebar.batchExit') : t('sidebar.batchManage')}
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  {isBatchMode ? 'close' : 'delete_sweep'}
+                </span>
+              </button>
             </div>
           </div>
 
@@ -265,6 +404,66 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
             data-testid="sidebar-session-list-section"
             className="sidebar-section sidebar-section--visible flex flex-1 min-h-0 flex-col"
           >
+            {isBatchMode && (
+              <div className="mx-3 mb-2 rounded-[8px] border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-2 shadow-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 text-xs font-medium text-[var(--color-text-primary)]">
+                    {t('sidebar.batchSelectedCount', { count: selectedCount })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleExitBatchMode}
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)]"
+                    aria-label={t('sidebar.batchExit')}
+                    title={t('sidebar.batchExit')}
+                  >
+                    <span className="material-symbols-outlined text-[17px]">close</span>
+                  </button>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (filteredSessionIds.every((id) => selectedSessionIds.has(id))) {
+                        deselectSessions(filteredSessionIds)
+                      } else {
+                        selectSessions(filteredSessionIds)
+                      }
+                    }}
+                    disabled={filteredSessionIds.length === 0}
+                    className="rounded-md border border-[var(--color-border)] px-2 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+                  >
+                    {filteredSessionIds.length > 0 && filteredSessionIds.every((id) => selectedSessionIds.has(id))
+                      ? t('sidebar.batchDeselectAll')
+                      : t('sidebar.batchSelectAll')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => requestBatchDelete([...selectedSessionIds])}
+                    disabled={selectedCount === 0}
+                    className="rounded-md bg-[var(--color-error)] px-2 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    {t('sidebar.batchDeleteSelected', { count: selectedCount })}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectOlderThan(7)}
+                    disabled={getSessionsOlderThan(filteredSessions, 7).length === 0}
+                    className="rounded-md border border-[var(--color-border)] px-2 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+                  >
+                    {t('sidebar.batchClearOlderThan7')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectOlderThan(30)}
+                    disabled={getSessionsOlderThan(filteredSessions, 30).length === 0}
+                    className="rounded-md border border-[var(--color-border)] px-2 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+                  >
+                    {t('sidebar.batchClearOlderThan30')}
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="sidebar-scroll-area min-h-0 flex-1 overflow-y-auto px-3">
               {error && (
                 <div className="mx-1 mt-2 rounded-[var(--radius-md)] border border-[var(--color-error)]/20 bg-[var(--color-error)]/5 px-3 py-2">
@@ -290,10 +489,30 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
               {TIME_GROUP_ORDER.map((group) => {
                 const items = timeGroups.get(group)
                 if (!items || items.length === 0) return null
+                const groupIds = items.map((session) => session.id)
+                const groupSelectedCount = groupIds.filter((id) => selectedSessionIds.has(id)).length
                 return (
                   <div key={group} className="mb-1">
-                    <div className="px-2 pb-1 pt-4 text-[11px] font-semibold tracking-wide text-[var(--color-text-tertiary)]">
-                      {timeGroupLabels[group]}
+                    <div className="flex items-center justify-between px-2 pb-1 pt-4">
+                      <div className="text-[11px] font-semibold tracking-wide text-[var(--color-text-tertiary)]">
+                        {timeGroupLabels[group]}
+                      </div>
+                      {isBatchMode && (
+                        <button
+                          type="button"
+                          onClick={() => toggleGroupSelection(groupIds)}
+                          className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)] ${
+                            groupSelectedCount > 0
+                              ? 'text-[var(--color-brand)] hover:bg-[var(--color-brand)]/10'
+                              : 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-secondary)]'
+                          }`}
+                          aria-label={t('sidebar.batchSelectGroup', { group: timeGroupLabels[group] })}
+                        >
+                          {groupSelectedCount === groupIds.length
+                            ? t('sidebar.batchDeselectAll')
+                            : t('sidebar.batchSelectAll')}
+                        </button>
+                      )}
                     </div>
                     {items.map((session) => (
                       <div key={session.id} className="relative">
@@ -314,7 +533,11 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
                           />
                         ) : (
                           <button
-                            onClick={() => {
+                            onClick={(event) => {
+                              if (isBatchMode) {
+                                handleBatchSessionClick(event, session.id)
+                                return
+                              }
                               useTabStore.getState().openTab(session.id, session.title)
                               useChatStore.getState().connectToSession(session.id)
                               closeMobileDrawer()
@@ -322,20 +545,38 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
                             onContextMenu={(e) => handleContextMenu(e, session.id)}
                             className={`
                               group w-full rounded-[12px] px-3 ${isMobile ? 'py-3' : 'py-2'} text-left text-sm transition-colors duration-200
-                              ${session.id === activeTabId
+                              ${selectedSessionIds.has(session.id)
+                                ? 'bg-[var(--color-sidebar-item-active)] text-[var(--color-text-primary)] ring-1 ring-[var(--color-brand)]/15'
+                                : session.id === activeTabId
                                 ? 'bg-[var(--color-sidebar-item-active)] text-[var(--color-text-primary)]'
                                 : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-sidebar-item-hover)]'
                               }
                             `}
+                            aria-pressed={isBatchMode ? selectedSessionIds.has(session.id) : undefined}
                           >
                             <span className="flex items-center gap-2.5">
-                              <span
-                                className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
-                                style={{
-                                  backgroundColor: session.id === activeTabId ? 'var(--color-brand)' : 'var(--color-text-tertiary)',
-                                  opacity: session.id === activeTabId ? 1 : 0.5,
-                                }}
-                              />
+                              {isBatchMode ? (
+                                <span
+                                  className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-[5px] border transition-colors ${
+                                    selectedSessionIds.has(session.id)
+                                      ? 'border-[var(--color-brand)] bg-[var(--color-brand)] text-white'
+                                      : 'border-[var(--color-border)] bg-[var(--color-surface)]'
+                                  }`}
+                                  aria-hidden="true"
+                                >
+                                  {selectedSessionIds.has(session.id) && (
+                                    <span className="material-symbols-outlined text-[12px]">check</span>
+                                  )}
+                                </span>
+                              ) : (
+                                <span
+                                  className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                                  style={{
+                                    backgroundColor: session.id === activeTabId ? 'var(--color-brand)' : 'var(--color-text-tertiary)',
+                                    opacity: session.id === activeTabId ? 1 : 0.5,
+                                  }}
+                                />
+                              )}
                               <span className="flex-1 truncate font-medium tracking-[-0.01em]">{session.title || 'Untitled'}</span>
                               {!session.workDirExists && (
                                 <span
@@ -414,6 +655,42 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
         cancelLabel={t('common.cancel')}
         confirmVariant="danger"
       />
+      <ConfirmDialog
+        open={pendingBatchDeleteSessionIds !== null}
+        onClose={() => {
+          if (!isBatchDeleting) setPendingBatchDeleteSessionIds(null)
+        }}
+        onConfirm={confirmBatchDelete}
+        title={t('common.delete')}
+        body={(
+          <div className="space-y-3">
+            <p className="text-sm leading-6 text-[var(--color-text-secondary)]">
+              {t('sidebar.batchDeleteConfirm', { count: pendingBatchDeleteSessionIds?.length ?? 0 })}
+            </p>
+            <div>
+              <div className="mb-1.5 text-xs font-medium text-[var(--color-text-primary)]">
+                {t('sidebar.batchDeleteConfirmBody')}
+              </div>
+              <ul className="max-h-40 space-y-1 overflow-y-auto rounded-[8px] border border-[var(--color-border)] bg-[var(--color-surface-container-low)] p-2">
+                {pendingBatchDeleteSessions.slice(0, 5).map((session) => (
+                  <li key={session.id} className="truncate text-xs text-[var(--color-text-secondary)]">
+                    {session.title || 'Untitled'}
+                  </li>
+                ))}
+                {(pendingBatchDeleteSessionIds?.length ?? 0) > 5 && (
+                  <li className="text-xs text-[var(--color-text-tertiary)]">
+                    {t('sidebar.batchDeleteMore', { count: (pendingBatchDeleteSessionIds?.length ?? 0) - 5 })}
+                  </li>
+                )}
+              </ul>
+            </div>
+          </div>
+        )}
+        confirmLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
+        confirmVariant="danger"
+        loading={isBatchDeleting}
+      />
     </aside>
   )
 }
@@ -440,6 +717,13 @@ function groupByTime(sessions: SessionListItem[]): Map<TimeGroup, SessionListIte
   }
 
   return groups
+}
+
+function getSessionsOlderThan(sessions: SessionListItem[], days: number): string[] {
+  const threshold = Date.now() - days * 86400000
+  return sessions
+    .filter((session) => new Date(session.modifiedAt).getTime() < threshold)
+    .map((session) => session.id)
 }
 
 function NavItem({

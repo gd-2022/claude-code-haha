@@ -10,6 +10,7 @@
  *   GET    /api/sessions/:id/turn-checkpoints — 获取按轮次保留的 checkpoint 预览
  *   GET    /api/sessions/:id/turn-checkpoints/diff — 获取绑定到指定 checkpoint 的 diff
  *   POST   /api/sessions            — 创建新会话
+ *   POST   /api/sessions/batch-delete — 批量删除会话
  *   DELETE /api/sessions/:id        — 删除会话
  *   PATCH  /api/sessions/:id        — 重命名会话
  */
@@ -68,6 +69,17 @@ export async function handleSessionsApi(
             { status: 405 }
           )
       }
+    }
+
+    // Special collection route: /api/sessions/batch-delete
+    if (sessionId === 'batch-delete') {
+      if (req.method !== 'POST') {
+        return Response.json(
+          { error: 'METHOD_NOT_ALLOWED', message: `Method ${req.method} not allowed` },
+          { status: 405 }
+        )
+      }
+      return await batchDeleteSessions(req)
     }
 
     // Special collection route: /api/sessions/recent-projects
@@ -357,6 +369,54 @@ async function deleteSession(sessionId: string): Promise<Response> {
   closeSessionConnection(sessionId, 'session deleted')
   cleanupAdapterSessionMappings(sessionId)
   return Response.json({ ok: true })
+}
+
+async function batchDeleteSessions(req: Request): Promise<Response> {
+  let body: { sessionIds?: unknown }
+  try {
+    body = (await req.json()) as { sessionIds?: unknown }
+  } catch {
+    throw ApiError.badRequest('Invalid JSON body')
+  }
+
+  const sessionIds = normalizeSessionIds(body.sessionIds)
+  conversationService.markSessionsDeleted(sessionIds)
+  const result = await sessionService.deleteSessions(sessionIds)
+
+  if (result.failures.length > 0) {
+    conversationService.unmarkSessionsDeleted(result.failures.map((failure) => failure.sessionId))
+  }
+
+  for (const sessionId of result.successes) {
+    closeSessionConnection(sessionId, 'session deleted')
+    cleanupAdapterSessionMappings(sessionId)
+  }
+
+  return Response.json({
+    ok: result.failures.length === 0,
+    successes: result.successes,
+    failures: result.failures,
+  })
+}
+
+function normalizeSessionIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    throw ApiError.badRequest('sessionIds must be an array')
+  }
+
+  const sessionIds: string[] = []
+  for (const sessionId of value) {
+    if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
+      throw ApiError.badRequest('sessionIds must contain only non-empty strings')
+    }
+    sessionIds.push(sessionId.trim())
+  }
+
+  if (sessionIds.length === 0) {
+    throw ApiError.badRequest('sessionIds must include at least one session id')
+  }
+
+  return [...new Set(sessionIds)]
 }
 
 function cleanupAdapterSessionMappings(sessionId: string): void {

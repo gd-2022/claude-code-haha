@@ -1858,6 +1858,97 @@ describe('Sessions API', () => {
     }
   })
 
+  it('POST /api/sessions/batch-delete should delete sessions and clean adapter mappings', async () => {
+    const sessionIdA = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    const sessionIdB = 'ffffffff-1111-2222-3333-ffffffffffff'
+    const otherSessionId = '99999999-1111-2222-3333-999999999999'
+    await writeSessionFile('-tmp-api-test', sessionIdA, [makeSnapshotEntry()])
+    await writeSessionFile('-tmp-api-test', sessionIdB, [makeSnapshotEntry()])
+    await fs.writeFile(
+      path.join(tmpDir, 'adapter-sessions.json'),
+      JSON.stringify({
+        'wechat-chat-a': {
+          sessionId: sessionIdA,
+          workDir: '/tmp/project-a',
+          updatedAt: 1,
+        },
+        'wechat-chat-b': {
+          sessionId: sessionIdB,
+          workDir: '/tmp/project-b',
+          updatedAt: 2,
+        },
+        'other-chat': {
+          sessionId: otherSessionId,
+          workDir: '/tmp/project-c',
+          updatedAt: 3,
+        },
+      }, null, 2),
+      'utf-8',
+    )
+
+    const res = await fetch(`${baseUrl}/api/sessions/batch-delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionIds: [sessionIdA, sessionIdB] }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      ok: true,
+      successes: [sessionIdA, sessionIdB],
+      failures: [],
+    })
+
+    expect((await fetch(`${baseUrl}/api/sessions/${sessionIdA}`)).status).toBe(404)
+    expect((await fetch(`${baseUrl}/api/sessions/${sessionIdB}`)).status).toBe(404)
+    const persisted = JSON.parse(
+      await fs.readFile(path.join(tmpDir, 'adapter-sessions.json'), 'utf-8'),
+    )
+    expect(persisted['wechat-chat-a']).toBeUndefined()
+    expect(persisted['wechat-chat-b']).toBeUndefined()
+    expect(persisted['other-chat'].sessionId).toBe(otherSessionId)
+  })
+
+  it('POST /api/sessions/batch-delete should report partial failures and roll back failed delete markers', async () => {
+    const successSessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    const failedSessionId = 'ffffffff-1111-2222-3333-ffffffffffff'
+    await writeSessionFile('-tmp-api-test', successSessionId, [makeSnapshotEntry()])
+    await writeSessionFile('-tmp-api-test', failedSessionId, [makeSnapshotEntry()])
+
+    const originalDeleteSession = sessionService.deleteSession.bind(sessionService)
+    sessionService.deleteSession = (async (targetSessionId: string) => {
+      if (targetSessionId === failedSessionId) {
+        throw new Error('simulated batch unlink failure')
+      }
+      return originalDeleteSession(targetSessionId)
+    }) as typeof sessionService.deleteSession
+
+    try {
+      const res = await fetch(`${baseUrl}/api/sessions/batch-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionIds: [successSessionId, failedSessionId] }),
+      })
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({
+        ok: false,
+        successes: [successSessionId],
+        failures: [{
+          sessionId: failedSessionId,
+          message: 'simulated batch unlink failure',
+        }],
+      })
+      expect((conversationService as any).deletedSessions.has(failedSessionId)).toBe(false)
+      expect((await fetch(`${baseUrl}/api/sessions/${successSessionId}`)).status).toBe(404)
+      expect((await fetch(`${baseUrl}/api/sessions/${failedSessionId}`)).status).toBe(200)
+    } finally {
+      sessionService.deleteSession = originalDeleteSession as typeof sessionService.deleteSession
+      conversationService.unmarkSessionDeleted(successSessionId)
+      conversationService.unmarkSessionDeleted(failedSessionId)
+    }
+  })
+
   it('PATCH /api/sessions/:id should rename the session', async () => {
     const sessionId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
     await writeSessionFile('-tmp-api-test', sessionId, [

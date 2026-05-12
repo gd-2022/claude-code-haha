@@ -41,6 +41,17 @@ export type SessionListItem = {
   workDirExists: boolean
 }
 
+export type DeleteSessionFailure = {
+  sessionId: string
+  message: string
+  code?: string
+}
+
+export type DeleteSessionsResult = {
+  successes: string[]
+  failures: DeleteSessionFailure[]
+}
+
 export type SessionDetail = SessionListItem & {
   messages: MessageEntry[]
 }
@@ -1337,6 +1348,39 @@ export class SessionService {
     }
 
     await fs.unlink(found.filePath)
+  }
+
+  async deleteSessions(sessionIds: string[]): Promise<DeleteSessionsResult> {
+    const successes: string[] = []
+    const failures: DeleteSessionFailure[] = []
+
+    const results = await Promise.all(sessionIds.map(async (sessionId) => {
+      try {
+        await this.deleteSession(sessionId)
+        return { type: 'success' as const, sessionId }
+      } catch (error) {
+        return {
+          type: 'failure' as const,
+          sessionId,
+          message: error instanceof Error ? error.message : 'Unknown delete failure',
+          code: error instanceof ApiError ? error.code : undefined,
+        }
+      }
+    }))
+
+    for (const result of results) {
+      if (result.type === 'success') {
+        successes.push(result.sessionId)
+      } else {
+        failures.push({
+          sessionId: result.sessionId,
+          message: result.message,
+          code: result.code,
+        })
+      }
+    }
+
+    return { successes, failures }
   }
 
   /**

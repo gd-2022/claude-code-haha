@@ -7,7 +7,7 @@ vi.mock('./ProjectFilter', () => ({
 }))
 
 vi.mock('../../i18n', () => ({
-  useTranslation: () => (key: string) => {
+  useTranslation: () => (key: string, params?: Record<string, string | number>) => {
     const translations: Record<string, string> = {
       'sidebar.newSession': 'New Session',
       'sidebar.scheduled': 'Scheduled',
@@ -28,11 +28,29 @@ vi.mock('../../i18n', () => ({
       'sidebar.timeGroup.older': 'Older',
       'sidebar.missingDir': 'Missing',
       'sidebar.confirmDelete': 'Delete this session? This cannot be undone.',
+      'sidebar.batchManage': 'Batch manage',
+      'sidebar.batchSelectedCount': '{count} selected',
+      'sidebar.batchSelectAll': 'Select all',
+      'sidebar.batchDeselectAll': 'Deselect all',
+      'sidebar.batchSelectGroup': 'Select {group}',
+      'sidebar.batchDeleteSelected': 'Delete selected ({count})',
+      'sidebar.batchDeleteConfirm': 'Delete {count} sessions? This cannot be undone.',
+      'sidebar.batchDeleteConfirmBody': 'The following sessions will be deleted:',
+      'sidebar.batchDeleteMore': '...and {count} more',
+      'sidebar.batchClearOlderThan30': 'Clear >30d',
+      'sidebar.batchClearOlderThan7': 'Clear >7d',
+      'sidebar.batchExit': 'Cancel batch mode',
+      'sidebar.batchDeleteSucceeded': 'Deleted {count} sessions.',
+      'sidebar.batchDeleteFailed': '{count} sessions could not be deleted.',
       'sidebar.collapse': 'Collapse sidebar',
       'sidebar.expand': 'Expand sidebar',
     }
 
-    return translations[key] ?? key
+    let text = translations[key] ?? key
+    for (const [name, value] of Object.entries(params ?? {})) {
+      text = text.replace(new RegExp(`\\{${name}\\}`, 'g'), String(value))
+    }
+    return text
   },
 }))
 
@@ -48,6 +66,7 @@ describe('Sidebar', () => {
   const fetchSessions = vi.fn()
   const createSession = vi.fn()
   const deleteSession = vi.fn()
+  const deleteSessions = vi.fn()
   const addToast = vi.fn()
 
   beforeEach(() => {
@@ -56,6 +75,7 @@ describe('Sidebar', () => {
     fetchSessions.mockReset()
     createSession.mockReset()
     deleteSession.mockReset()
+    deleteSessions.mockReset()
     addToast.mockReset()
 
     useTabStore.setState({ tabs: [], activeTabId: null })
@@ -66,9 +86,12 @@ describe('Sidebar', () => {
       error: null,
       selectedProjects: [],
       availableProjects: [],
+      isBatchMode: false,
+      selectedSessionIds: new Set(),
       fetchSessions,
       createSession,
       deleteSession,
+      deleteSessions,
     })
     useChatStore.setState({
       connectToSession,
@@ -168,6 +191,75 @@ describe('Sidebar', () => {
 
     expect(useTabStore.getState().tabs).toEqual([])
     expect(useTabStore.getState().activeTabId).toBeNull()
+  })
+
+  it('selects and deletes multiple sessions from batch mode', async () => {
+    deleteSessions.mockResolvedValue({
+      ok: true,
+      successes: ['session-1', 'session-2'],
+      failures: [],
+    })
+    const now = new Date().toISOString()
+    useSessionStore.setState({
+      sessions: [
+        {
+          id: 'session-1',
+          title: 'First Session',
+          createdAt: now,
+          modifiedAt: now,
+          messageCount: 1,
+          projectPath: '/workspace/project',
+          workDir: '/workspace/project',
+          workDirExists: true,
+        },
+        {
+          id: 'session-2',
+          title: 'Second Session',
+          createdAt: now,
+          modifiedAt: now,
+          messageCount: 1,
+          projectPath: '/workspace/project',
+          workDir: '/workspace/project',
+          workDirExists: true,
+        },
+      ],
+    })
+    useTabStore.setState({
+      tabs: [
+        { sessionId: 'session-1', title: 'First Session', type: 'session', status: 'idle' },
+        { sessionId: 'session-2', title: 'Second Session', type: 'session', status: 'idle' },
+      ],
+      activeTabId: 'session-1',
+    })
+
+    render(<Sidebar />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Batch manage' }))
+    fireEvent.click(screen.getByRole('button', { name: /First Session/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Second Session/ }))
+
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete selected (2)' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Delete 2 sessions? This cannot be undone.')).toBeInTheDocument()
+    expect(within(dialog).getByText('First Session')).toBeInTheDocument()
+    expect(within(dialog).getByText('Second Session')).toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    })
+
+    await waitFor(() => {
+      expect(deleteSessions).toHaveBeenCalledWith(['session-1', 'session-2'])
+      expect(disconnectSession).toHaveBeenCalledWith('session-1')
+      expect(disconnectSession).toHaveBeenCalledWith('session-2')
+    })
+    expect(useTabStore.getState().tabs).toEqual([])
+    expect(addToast).toHaveBeenCalledWith({
+      type: 'success',
+      message: 'Deleted 2 sessions.',
+    })
   })
 
   it('collapses into an icon rail and expands back', async () => {

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { sessionsApi, type CreateSessionRepositoryOptions } from '../api/sessions'
+import { sessionsApi, type BatchDeleteSessionsResponse, type CreateSessionRepositoryOptions } from '../api/sessions'
 import { useSessionRuntimeStore } from './sessionRuntimeStore'
 import { useTabStore } from './tabStore'
 import type { SessionListItem } from '../types/session'
@@ -16,10 +16,19 @@ type SessionStore = {
   error: string | null
   selectedProjects: string[]
   availableProjects: string[]
+  isBatchMode: boolean
+  selectedSessionIds: Set<string>
 
   fetchSessions: (project?: string) => Promise<void>
   createSession: (workDir?: string, options?: CreateSessionOptions) => Promise<string>
   deleteSession: (id: string) => Promise<void>
+  deleteSessions: (ids: string[]) => Promise<BatchDeleteSessionsResponse>
+  enterBatchMode: () => void
+  exitBatchMode: () => void
+  toggleSessionSelected: (id: string) => void
+  selectSessions: (ids: string[]) => void
+  deselectSessions: (ids: string[]) => void
+  clearSessionSelection: () => void
   renameSession: (id: string, title: string) => Promise<void>
   updateSessionTitle: (id: string, title: string) => void
   setActiveSession: (id: string | null) => void
@@ -33,6 +42,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   error: null,
   selectedProjects: [],
   availableProjects: [],
+  isBatchMode: false,
+  selectedSessionIds: new Set(),
 
   fetchSessions: async (project?: string) => {
     set({ isLoading: true, error: null })
@@ -96,8 +107,46 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set((s) => ({
       sessions: s.sessions.filter((session) => session.id !== id),
       activeSessionId: s.activeSessionId === id ? null : s.activeSessionId,
+      selectedSessionIds: removeIdsFromSet(s.selectedSessionIds, [id]),
     }))
   },
+
+  deleteSessions: async (ids: string[]) => {
+    const sessionIds = [...new Set(ids)].filter(Boolean)
+    const result = await sessionsApi.batchDelete(sessionIds)
+    for (const id of result.successes) {
+      useSessionRuntimeStore.getState().clearSelection(id)
+    }
+    set((s) => ({
+      sessions: s.sessions.filter((session) => !result.successes.includes(session.id)),
+      activeSessionId: s.activeSessionId && result.successes.includes(s.activeSessionId)
+        ? null
+        : s.activeSessionId,
+      selectedSessionIds: removeIdsFromSet(s.selectedSessionIds, result.successes),
+    }))
+    return result
+  },
+
+  enterBatchMode: () => set({ isBatchMode: true }),
+  exitBatchMode: () => set({ isBatchMode: false, selectedSessionIds: new Set() }),
+  toggleSessionSelected: (id) => set((s) => {
+    const selectedSessionIds = new Set(s.selectedSessionIds)
+    if (selectedSessionIds.has(id)) {
+      selectedSessionIds.delete(id)
+    } else {
+      selectedSessionIds.add(id)
+    }
+    return { selectedSessionIds }
+  }),
+  selectSessions: (ids) => set((s) => {
+    const selectedSessionIds = new Set(s.selectedSessionIds)
+    for (const id of ids) selectedSessionIds.add(id)
+    return { selectedSessionIds }
+  }),
+  deselectSessions: (ids) => set((s) => ({
+    selectedSessionIds: removeIdsFromSet(s.selectedSessionIds, ids),
+  })),
+  clearSessionSelection: () => set({ selectedSessionIds: new Set() }),
 
   renameSession: async (id: string, title: string) => {
     await sessionsApi.rename(id, title)
@@ -119,6 +168,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   setActiveSession: (id) => set({ activeSessionId: id }),
   setSelectedProjects: (projects) => set({ selectedProjects: projects }),
 }))
+
+function removeIdsFromSet(selected: Set<string>, ids: string[]): Set<string> {
+  if (ids.length === 0) return selected
+  const next = new Set(selected)
+  for (const id of ids) next.delete(id)
+  return next
+}
 
 function preserveLocalTitle(
   current: SessionListItem | undefined,

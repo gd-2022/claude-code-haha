@@ -58,6 +58,11 @@ vi.mock('../api/providers', () => ({
 
 vi.mock('../lib/desktopNotifications', () => desktopNotificationsMock)
 vi.mock('../components/chat/clipboard', () => clipboardMock)
+vi.mock('qrcode', () => ({
+  default: {
+    toDataURL: vi.fn().mockResolvedValue('data:image/png;base64,h5qr'),
+  },
+}))
 
 vi.mock('../components/settings/ClaudeOfficialLogin', () => ({
   ClaudeOfficialLogin: () => <div data-testid="claude-official-login" />,
@@ -160,9 +165,38 @@ describe('Settings > General tab', () => {
       setWebSearch: vi.fn().mockImplementation(async (webSearch) => {
         useSettingsStore.setState({ webSearch })
       }),
-      enableH5Access: vi.fn().mockResolvedValue('h5_default_generated_token'),
-      disableH5Access: vi.fn(),
-      regenerateH5AccessToken: vi.fn().mockResolvedValue('h5_default_regenerated_token'),
+      enableH5Access: vi.fn().mockImplementation(async () => {
+        const current = useSettingsStore.getState().h5Access
+        useSettingsStore.setState({
+          h5Access: {
+            ...current,
+            enabled: true,
+            tokenPreview: 'h5_default_generated_token'.slice(0, 8),
+          },
+        })
+        return 'h5_default_generated_token'
+      }),
+      disableH5Access: vi.fn().mockImplementation(async () => {
+        const current = useSettingsStore.getState().h5Access
+        useSettingsStore.setState({
+          h5Access: {
+            ...current,
+            enabled: false,
+            tokenPreview: null,
+          },
+        })
+      }),
+      regenerateH5AccessToken: vi.fn().mockImplementation(async () => {
+        const current = useSettingsStore.getState().h5Access
+        useSettingsStore.setState({
+          h5Access: {
+            ...current,
+            enabled: true,
+            tokenPreview: 'h5_default_regenerated_token'.slice(0, 8),
+          },
+        })
+        return 'h5_default_regenerated_token'
+      }),
       updateH5AccessSettings: vi.fn(),
     })
 
@@ -291,17 +325,97 @@ describe('Settings > General tab', () => {
     })
   })
 
-  it('renders the H5 section without token controls while access is open', () => {
+  it('renders the H5 section with access disabled by default', () => {
     render(<Settings />)
 
     fireEvent.click(screen.getByText('General'))
 
     const section = screen.getByRole('region', { name: 'H5 Access' })
-    expect(within(section).getByText('Token access is temporarily disabled; H5 requests are allowed without an Authorization header.')).toBeInTheDocument()
-    expect(within(section).queryByLabelText('Enable H5 access')).not.toBeInTheDocument()
+    expect(within(section).getByLabelText('Enable H5 access')).not.toBeChecked()
+    expect(within(section).getByText('Disabled')).toBeInTheDocument()
     expect(within(section).queryByText('Token preview')).not.toBeInTheDocument()
     expect(within(section).queryByRole('button', { name: 'Regenerate token' })).not.toBeInTheDocument()
     expect(within(section).queryByLabelText('Allowed origins')).not.toBeInTheDocument()
+  })
+
+  it('confirms the LAN risk before enabling H5 access and renders a token QR link', async () => {
+    useSettingsStore.setState({
+      h5Access: {
+        enabled: false,
+        tokenPreview: null,
+        allowedOrigins: [],
+        publicBaseUrl: 'http://192.168.0.102:3456',
+      },
+    })
+    render(<Settings />)
+
+    fireEvent.click(screen.getByText('General'))
+    const section = screen.getByRole('region', { name: 'H5 Access' })
+
+    fireEvent.click(within(section).getByLabelText('Enable H5 access'))
+    const dialog = screen.getByRole('dialog', { name: 'Enable LAN H5 access?' })
+    expect(within(dialog).getByText(/desktop H5 app on your LAN address and port/i)).toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Enable H5 access' }))
+    })
+
+    expect(useSettingsStore.getState().enableH5Access).toHaveBeenCalledTimes(1)
+    expect(await within(section).findByAltText('H5 access QR code')).toBeInTheDocument()
+    expect(within(section).getByText('http://192.168.0.102:3456/?serverUrl=http%3A%2F%2F192.168.0.102%3A3456&h5Token=h5_default_generated_token')).toBeInTheDocument()
+  })
+
+  it('copies the QR launch URL with the generated H5 token', async () => {
+    useSettingsStore.setState({
+      h5Access: {
+        enabled: false,
+        tokenPreview: null,
+        allowedOrigins: [],
+        publicBaseUrl: 'http://192.168.0.102:3456',
+      },
+    })
+    render(<Settings />)
+
+    fireEvent.click(screen.getByText('General'))
+    const section = screen.getByRole('region', { name: 'H5 Access' })
+    fireEvent.click(within(section).getByLabelText('Enable H5 access'))
+
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole('dialog', { name: 'Enable LAN H5 access?' })).getByRole('button', { name: 'Enable H5 access' }))
+    })
+
+    await within(section).findByAltText('H5 access QR code')
+    await act(async () => {
+      fireEvent.click(within(section).getByRole('button', { name: 'Copy QR link' }))
+    })
+
+    expect(clipboardMock.copyTextToClipboard).toHaveBeenCalledWith(
+      'http://192.168.0.102:3456/?serverUrl=http%3A%2F%2F192.168.0.102%3A3456&h5Token=h5_default_generated_token',
+    )
+  })
+
+  it('shows the generated H5 token as a fallback when requested', async () => {
+    useSettingsStore.setState({
+      h5Access: {
+        enabled: false,
+        tokenPreview: null,
+        allowedOrigins: [],
+        publicBaseUrl: 'http://192.168.0.102:3456',
+      },
+    })
+    render(<Settings />)
+
+    fireEvent.click(screen.getByText('General'))
+    const section = screen.getByRole('region', { name: 'H5 Access' })
+    fireEvent.click(within(section).getByLabelText('Enable H5 access'))
+
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole('dialog', { name: 'Enable LAN H5 access?' })).getByRole('button', { name: 'Enable H5 access' }))
+    })
+
+    fireEvent.click(within(section).getByRole('button', { name: 'Show token' }))
+
+    expect(within(section).getByText('h5_default_generated_token')).toBeInTheDocument()
   })
 
   it('places H5 access after the common General settings sections', () => {
@@ -317,7 +431,7 @@ describe('Settings > General tab', () => {
   it('copies the H5 URL when available', async () => {
     useSettingsStore.setState({
       h5Access: {
-        enabled: false,
+        enabled: true,
         tokenPreview: 'h5url123',
         allowedOrigins: ['https://phone.example'],
         publicBaseUrl: 'https://phone.example/app',

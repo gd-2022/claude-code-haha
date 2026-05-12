@@ -131,17 +131,18 @@ export async function initializeDesktopServerUrl() {
 }
 
 async function initializeBrowserServerUrl(fallbackUrl: string) {
-  const queryUrl =
-    typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('serverUrl')
-      : null
+  const query = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search)
+    : null
+  const queryUrl = query?.get('serverUrl') ?? null
+  const queryToken = normalizeToken(query?.get('h5Token') ?? query?.get('token'))
   const stored = readStoredH5Connection()
   const requestedUrl =
     normalizeServerUrl(queryUrl) ??
     stored.serverUrl ??
     getConfiguredBrowserServerUrl(fallbackUrl) ??
     fallbackUrl
-  const token = stored.token
+  const token = queryToken ?? stored.token
   const browserH5Runtime = requiresH5AuthForServerUrl(requestedUrl)
 
   setBaseUrl(requestedUrl)
@@ -179,6 +180,14 @@ async function initializeBrowserServerUrl(fallbackUrl: string) {
   } catch (error) {
     clearStoredH5Token()
     throw normalizeBrowserH5Error(error, requestedUrl)
+  }
+
+  if (queryToken && typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(H5_TOKEN_STORAGE_KEY, queryToken)
+    } catch {
+      // Ignore storage failures after successful verification.
+    }
   }
 
   return requestedUrl
@@ -269,9 +278,12 @@ export function isLoopbackHostname(hostname: string) {
 }
 
 export function requiresH5AuthForServerUrl(serverUrl: string, browserHostname = getBrowserHostname()) {
-  void serverUrl
   void browserHostname
-  return false
+  try {
+    return !isLoopbackHostname(new URL(serverUrl).hostname)
+  } catch {
+    return false
+  }
 }
 
 function getBrowserHostname() {

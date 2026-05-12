@@ -260,6 +260,58 @@ describe('Sidebar', () => {
     })
   })
 
+  it('renders batch-selected sessions as separated selected rows', () => {
+    const now = new Date().toISOString()
+    useSessionStore.setState({
+      sessions: [
+        {
+          id: 'session-1',
+          title: 'First Session',
+          createdAt: now,
+          modifiedAt: now,
+          messageCount: 1,
+          projectPath: '/workspace/project',
+          workDir: '/workspace/project',
+          workDirExists: true,
+        },
+        {
+          id: 'session-2',
+          title: 'Second Session',
+          createdAt: now,
+          modifiedAt: now,
+          messageCount: 1,
+          projectPath: '/workspace/project',
+          workDir: '/workspace/project',
+          workDirExists: true,
+        },
+        {
+          id: 'session-3',
+          title: 'Third Session',
+          createdAt: now,
+          modifiedAt: now,
+          messageCount: 1,
+          projectPath: '/workspace/project',
+          workDir: '/workspace/project',
+          workDirExists: true,
+        },
+      ],
+    })
+    useTabStore.setState({
+      tabs: [{ sessionId: 'session-2', title: 'Second Session', type: 'session', status: 'idle' }],
+      activeTabId: 'session-2',
+    })
+
+    render(<Sidebar />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Batch manage' }))
+    fireEvent.click(screen.getByRole('button', { name: /First Session/ }))
+
+    expect(screen.getByRole('button', { name: /First Session/ }).parentElement).toHaveClass('mb-1.5')
+    expect(screen.getByRole('button', { name: /First Session/ })).toHaveClass('sidebar-session-row--selected')
+    expect(screen.getByRole('button', { name: /Second Session/ })).toHaveClass('sidebar-session-row--active')
+    expect(screen.getByRole('button', { name: /Third Session/ })).toHaveClass('sidebar-session-row--idle')
+  })
+
   it('collapses into an icon rail and expands back', async () => {
     render(<Sidebar />)
 

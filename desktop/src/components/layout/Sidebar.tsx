@@ -493,7 +493,7 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
                       )}
                     </div>
                     {items.map((session) => (
-                      <div key={session.id} className="relative">
+                      <div key={session.id} className="relative mb-1.5 last:mb-0">
                         {renamingId === session.id ? (
                           <input
                             autoFocus
@@ -522,12 +522,12 @@ export function Sidebar({ isMobile = false, onRequestClose }: SidebarProps) {
                             }}
                             onContextMenu={(e) => handleContextMenu(e, session.id)}
                             className={`
-                              group w-full rounded-[12px] px-3 ${isMobile ? 'py-3' : 'py-2'} text-left text-sm transition-colors duration-200
+                              group w-full rounded-[12px] border px-3 ${isMobile ? 'py-3' : 'py-2'} text-left text-sm transition-[background,border-color,box-shadow,filter,color] duration-200
                               ${selectedSessionIds.has(session.id)
-                                ? 'bg-[var(--color-sidebar-item-active)] text-[var(--color-text-primary)] ring-1 ring-[var(--color-brand)]/15'
+                                ? 'sidebar-session-row--selected border-[var(--color-sidebar-item-active-border)] bg-[var(--color-sidebar-item-active)] text-[var(--color-text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.72),0_3px_10px_rgba(143,72,47,0.07)] hover:brightness-[0.995]'
                                 : session.id === activeTabId
-                                ? 'bg-[var(--color-sidebar-item-active)] text-[var(--color-text-primary)]'
-                                : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-sidebar-item-hover)]'
+                                ? 'sidebar-session-row--active border-transparent bg-[var(--color-sidebar-item-active)] text-[var(--color-text-primary)]'
+                                : 'sidebar-session-row--idle border-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-sidebar-item-hover)]'
                               }
                             `}
                             aria-pressed={isBatchMode ? selectedSessionIds.has(session.id) : undefined}
